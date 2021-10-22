@@ -2116,9 +2116,6 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
             fails = 0
 
 
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-# Main Methods
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                    H2O_init, buffer, rel_fO2, T, model_version, partition,
                    chem, tol, sys_id):

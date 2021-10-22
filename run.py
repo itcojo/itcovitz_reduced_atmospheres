@@ -8,7 +8,7 @@ import reduced_atmospheres.equilibrate_melt as eq_melt
 gC = constants.Constants()  # global constants
 dir_path = reduced_atmospheres.dir_path
 
-# color palette
+# color-blind friendly colour palette
 wong = gC.color_wong
 cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
         'CO': wong[1], 'CH4': wong[-3], 'NH3': wong[-1], 'fO2_A': 'grey',
@@ -23,16 +23,16 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # [model outputs are saved automatically as h5py files]
 model_run = False
 
-# basaltic or peridotitic melt phase?
-basalt = True
-peridotite = False
-
 # which model version is running?
 # model_version = '1A'
 # model_version = '1B'
 # model_version = '2'
 model_version = '3A'
 # model_version = '3B'
+
+# basaltic or peridotitic melt phase?
+basalt = True
+peridotite = False
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -60,7 +60,7 @@ m_imps = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10.,
 fracs = np.arange(0.010, 0.11, 0.01)
 
 # basaltic melt phase oxygen fugacity
-fo2_vals = np.linspace(-3., 1., 20, endpoint=True)
+fo2_vals = np.linspace(-2., 1., 20, endpoint=True)
 
 # target initial surface water inventory
 waters = np.arange(1.4, 2.5, 0.1)
