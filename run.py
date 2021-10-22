@@ -31,8 +31,8 @@ model_version = '3A'
 # model_version = '3B'
 
 # basaltic or peridotitic melt phase?
-basalt = True
-peridotite = False
+basalt = False
+peridotite = True
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -43,7 +43,7 @@ peridotite = False
 figure_2 = False
 figure_3 = False
 figure_4 = False
-figure_5 = True
+figure_5 = False
 figure_6 = False
 figure_7 = False
 
@@ -83,7 +83,7 @@ temp = 1500.  # system temperature [K]
 
 theta = 45.  # degrees
 
-imp_type = 'E'  # composition of impactor (see 'global_constants')
+imp_type = 'E'  # composition of impactor (see 'constants')
 
 vaporised_oceans = 1.85  # surface H2O oceans [EO]
 

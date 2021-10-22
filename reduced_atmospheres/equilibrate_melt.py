@@ -175,7 +175,7 @@ def run_fastchem_files(sys_id):
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # open config file
-    with open(dir_fastchem + '/input/config_itcojo.input', 'r') as fc:
+    with open(dir_fastchem + '/input/config.input', 'r') as fc:
         # edit location of PT profile
         data = fc.readlines()
         data[4] = dir_path + '/data/FastChem/' + sys_id + '_PT.dat\n'
@@ -183,7 +183,7 @@ def run_fastchem_files(sys_id):
         data[10] = dir_path + '/data/FastChem/' + sys_id + '_monitor.dat\n'
 
     # open config file and edit in changes
-    with open(dir_fastchem + '/input/config_itcojo.input', 'w') as fc:
+    with open(dir_fastchem + '/input/config.input', 'w') as fc:
         fc.writelines(data)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -199,7 +199,7 @@ def run_fastchem_files(sys_id):
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # FastChem bash command
-    fastchem_bash = ["./fastchem", "input/config_itcojo.input"]
+    fastchem_bash = ["./fastchem", "input/config.input"]
     process = subprocess.run(fastchem_bash, cwd=dir_fastchem,
                              capture_output=True)
 
