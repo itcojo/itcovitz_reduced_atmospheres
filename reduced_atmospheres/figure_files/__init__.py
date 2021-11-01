@@ -35,7 +35,9 @@ def get_dpi():
             dpi = 175
 
     if len(dimensions) == 4:  # dual monitors
-        print("Write this bit...")
+        # itcovitz U2415
+        if '518mm' in dimensions:
+           dpi = 175
 
     return dpi
     

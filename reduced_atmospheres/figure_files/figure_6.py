@@ -1,3 +1,5 @@
+import sys
+
 import h5py
 import matplotlib.lines as lines
 import matplotlib.pyplot as plt
@@ -114,6 +116,8 @@ def plot_figure_6():
     fo2_melt_bas = [[] for _ in range(len(labels))]
     fo2_melt_per = [[] for _ in range(len(labels))]
 
+    p_tot, iw_vals = [], []
+
     fac = 1e-4 / (4. * np.pi * gC.r_earth**2.)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -160,6 +164,11 @@ def plot_figure_6():
 
                     # track which impactor masses successfully converged
                     plot_mass_per[idx].append(m_imp)
+
+                    if labels[idx] == '1A_':
+                        p_tot.append(list(f['atmos/p_tot'])[-1])
+                        iw_vals.append(
+                            float(eq_melt.fo2_iw(f['temp'][()], p_tot[-1])))
             except:
                 pass
 
@@ -316,6 +325,10 @@ def plot_figure_6():
         axs[ax].plot(masses, [fo2_melt_per[0][i][-1] for i in range(len(masses))],
                      color=cols['CO2'], linestyle=':', linewidth=1)
 
+    for ax in ['1B_fo2', '2_fo2', '3B_fo2']:
+        axs[ax].plot(masses, [item - 2. for item in iw_vals],
+                     color='grey', linestyle='--', linewidth=1)
+
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # Model 1B
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -342,6 +355,10 @@ def plot_figure_6():
                        color=cols['CO2'], va='top')
     axs['1B_fo2'].text(masses[0], 1.01 * fo2_melt_per[1][0][-1], s='P',
                        color=cols['CO2'], va='top')
+    axs['1B_fo2'].text(1.8, 1.01 * fo2_melt_bas[1][0][-1], s='ΔFMQ = 0',
+                       fontsize=7, color=cols['CO2'], va='top', ha='right')
+    axs['1B_fo2'].text(masses[0], iw_vals[0] - 2.1, s='ΔIW = -2',
+                       fontsize=7, color='grey', va='top', ha='left')
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # Model 2

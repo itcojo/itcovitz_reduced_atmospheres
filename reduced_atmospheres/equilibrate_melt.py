@@ -19,17 +19,11 @@ gC = reduced_atmospheres.constants.Constants()
 # directory where 'itcovitz_reduced_atmospheres/reduced_atmospheres' is located
 dir_path = reduced_atmospheres.dir_path + '/reduced_atmospheres'
 
-"""
-TO DO LIST
-----------
-- generalise 'available_iron' to take different angles and velocities
-- comment each mass reservoir in 'impact_melt_masses'
-
-"""
-
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # READ/WRITE THINGS
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def read_fastchem_output(sys_id):
     """
@@ -241,7 +235,9 @@ def write_fastchem(path, abundances, T, P):
 
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # USEFUL CALCULATIONS
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def calc_anhydrous_mass(fe2o3, feo, oxides):
     """
@@ -1144,10 +1140,14 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
            [n_init, n_erosion, n_ocean, n_degas, n_chem]
 
 
-def available_iron(m_imp, vel_imp, angle, max_hse=False):
+def available_iron(m_imp, vel_imp, angle, imp_comp, max_hse=False):
     """
     Determines how much of the iron from the impactor core is made available to
     the atmosphere for the reduction of the vaporised surface oceans.
+
+    NOTE: interpolation is only carried out as a function of impactor mass. In
+    this version of the code, therefore, impact velocity and angles must be one
+    of the modelled values (see exceptions).
 
     Parameters
     ----------
@@ -1157,6 +1157,10 @@ def available_iron(m_imp, vel_imp, angle, max_hse=False):
         Impact velocity.
     angle : float [deg]
         Impact angle.
+    imp_comp : str
+        Impactor composition indicator ('C': carbonaceous chondrite,
+        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
+        'E': enstatite chondrite, 'F': iron meteorite)
     max_hse : bool
         Determines whether the maximum HSE impactor is calculated and displayed,
         as calculated from the iron distribution (i.e., scaled from 2e22 kg
@@ -1173,7 +1177,16 @@ def available_iron(m_imp, vel_imp, angle, max_hse=False):
     """
     # --- Checks --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --
     if angle not in [0., 30., 45., 60.]:
-        print(">>> Given angle not simulated for iron distribution.")
+        print(">>> Given impact angle not simulated for iron distribution."
+              " Must be one of [0, 30, 45, 60] degrees.")
+        sys.exit()
+
+    r_imp = 1e3 * 0.5 * impactor_diameter(m_imp, imp_comp)  # [m]
+    v_esc = escape_velocity(gC.m_earth, m_imp, gC.r_earth, r_imp)  # [km s-1]
+
+    if vel_imp / v_esc not in [1.1, 1.5, 2.0]:
+        print(">>> Given impact velocity not simulated for iron distribution."
+              " Must be one of [1.1, 1.5, 2.0] v_esc.")
         sys.exit()
 
     # --- Import Data --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
@@ -1186,7 +1199,7 @@ def available_iron(m_imp, vel_imp, angle, max_hse=False):
         count = -1
         for line in file:
             count += 1
-            if count < 3:
+            if count < 2:
                 continue
             else:
                 row = line.split(",")
@@ -1202,11 +1215,13 @@ def available_iron(m_imp, vel_imp, angle, max_hse=False):
                     X_ejec.append(float(row[8]) + float(row[9]))
 
     # --- Read Data into Structure --- --- --- --- --- --- --- --- --- --- ---
+    completed = False
     interp_mass, interp_int, interp_atm, interp_ejec = [], [], [], []
     for i in range(len(masses)):
         # assume that we are using 2 v_esc as the impact velocity
         # HARDCODED - CHANGE IF NECESSARY
-        if vels[i] == 2.0:
+        if vels[i] == vel_imp / v_esc:
+            completed = True
             # carry out interpolation for 45 degree impacts
             if thetas[i] == angle:
                 interp_mass.append(masses[i])
@@ -1478,9 +1493,7 @@ def impactor_diameter(m_imp, imp_comp):
 def impact_melt_mass(m_imp, vel_imp, angle):
     """
     Calculate the mass of the silicate melt phase generated in a given impact.
-
-    Data calculated using a modified version of GADGET2 SPH (Springer+, 2005)
-    for planetary impacts [url].
+    Interpolation is carried as a function of modified specific impact energy.
 
     Parameters
     ----------
@@ -1531,19 +1544,18 @@ def impact_melt_mass(m_imp, vel_imp, angle):
             # impact angle
             theta = float(row[4])
 
-            # specific energy of impact
-            [Q_S, _] = specific_energy(m_t, m_i, v_imp,
-                                       np.sin(np.pi * theta / 180.))
+            # modified specific energy of impact
+            [Q_S, _] = specific_energy(m_t, m_i, v_imp, np.radians(theta))
 
             # forsterite reservoir masses
-            M_MELT = float(row[6])
-            M_SCF = float(row[7])
-            M_VAP = float(row[8])
-            M_SCF_ATM = float(row[9])
-            M_ATM = float(row[10])
-            M_DISC = float(row[11])
+            M_MELT = float(row[6])  # melt in the planet + atmos
+            M_SCF = float(row[7])  # supercritical fluid in the planet + atmos
+            M_VAP = float(row[8])  # vapour in the planet + atmos (no disk or ejecta)
+            M_SCF_ATM = float(row[9])  # supercritical fluid in the atmos
+            M_ATM = float(row[10])  # all phases in the atmosphere
+            M_DISC = float(row[11])  # all phases in the disk
 
-            # what we count as melt mass
+            # what we count as planetary melt mass
             m_melt = M_MELT + M_SCF - M_SCF_ATM
 
             q_s_interp.append(Q_S)
@@ -2203,7 +2215,8 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
     atm_moles_track, melt_moles_track = [], []
 
     # --- Iron Distribution --- --- --- --- --- --- --- --- --- --- --- --- --
-    [X_fe_atm, X_fe_int, X_fe_ejec] = available_iron(m_imp, v_imp, theta)
+    [X_fe_atm, X_fe_int, X_fe_ejec] =\
+        available_iron(m_imp, v_imp, theta, imp_comp=imp_comp)
 
     # fiducial model iron distribution
     if model_version in ['1A', '2']:
@@ -3566,7 +3579,8 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
     atm_moles_track, melt_moles_track = [], []
 
     # --- Iron Distribution --- --- --- --- --- --- --- --- --- --- --- --- --
-    [X_fe_atm, X_fe_int, X_fe_ejec] = available_iron(m_imp, v_imp, theta)
+    [X_fe_atm, X_fe_int, X_fe_ejec] = \
+        available_iron(m_imp, v_imp, theta, imp_comp=imp_comp)
 
     # fiducial model iron distribution
     if model_version in ['1A', '2']:

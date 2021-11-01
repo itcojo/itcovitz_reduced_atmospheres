@@ -21,7 +21,7 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # should calculations be carried out?
 # [model outputs are saved automatically as h5py files]
-model_run = False
+model_run = True
 
 # which model version is running?
 # model_version = '1A'
@@ -99,7 +99,7 @@ initial_water = 0.05  # water content of the impact-generated melt [wt%]
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 if (basalt and peridotite) or (not basalt and not peridotite):
-    print(">>> One of either basalt and peridotite must be True.")
+    print(">>> One of either basalt or peridotite must be True.")
     sys.exit()
 
 if model_run:
@@ -164,6 +164,7 @@ if model_run:
 
         # unpack atmosphere before thermochemical equilibrium is applied
         species = ['H2O', 'H2', 'N2', 'CO2']
+        init_p_tot = np.sum(list(p_init[-2].values()))
         values = []
         for item in species:
             values.append(n_init[-2][item])
@@ -174,6 +175,7 @@ if model_run:
 
             f.create_dataset('initial/species', data=species)
             f.create_dataset('initial/values', data=values)
+            f.create_dataset('initial/pressure', data=[init_p_tot])
 
             f.create_dataset('atmos/h2', data=trackers[0])
             f.create_dataset('atmos/h2o', data=trackers[1])
@@ -211,24 +213,30 @@ if model_run:
 if figure_2:
     # melt mass plot
     reduced_atmospheres.figure_files.figure_2.plot_figure_2()
+    print(">>> Figure 2 generated.")
 
 if figure_3:
     # iron distribution plot
     reduced_atmospheres.figure_files.figure_3.plot_figure_3()
+    print(">>> Figure 3 generated.")
 
 if figure_4:
     # post-impact system plot
     reduced_atmospheres.figure_files.figure_4.plot_figure_4()
     # reduced_atmospheres.figure_files.figure_4_B.plot_figure_4()
+    print(">>> Figure 4 generated.")
 
 if figure_5:
     # figure walking through the standard values impact scenario
     reduced_atmospheres.figure_files.figure_5.plot_figure_5()
+    print(">>> Figure 5 generated.")
 
 if figure_6:
     # five models comparison plot
     reduced_atmospheres.figure_files.figure_6.plot_figure_6()
+    print(">>> Figure 6 generated.")
 
 if figure_7:
     # melt-bulk mantle redox comparison plot
     reduced_atmospheres.figure_files.figure_7.plot_figure_7()
+    print(">>> Figure 7 generated.")

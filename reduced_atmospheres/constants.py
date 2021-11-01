@@ -40,7 +40,7 @@ class Constants:
         self.AU = 1.5e11  # 1 AU [m]
 
         self.r_earth = 6.371E6  # Earth Radius [m]
-        self.m_earth = 5.899e24  # Earth Mass [kg] from Robert Citron
+        self.m_earth = 5.899e24  # Earth Mass [kg]
         self.m_earth_mantle = 4.0e24  # Earth Mantle Mass [kg]
         self.g_earth = 9.81  # Earth Surface Gravity [m.s-1]
 
