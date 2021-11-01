@@ -1,6 +1,6 @@
 # Reduced atmospheres of post-impact worlds: The early Earth
 
-## Code Accompanyment, by J. P. Itcovitz
+## by J. P. Itcovitz, Institute of Astronomy, University of Cambridge
 
 
 This code accompanies, and can be used to reproduce the results and figures of, Itcovitz et al. (2021) (doi:URL). The code is presented as a Python module, with an accompanying yml for reproducibility of the Python environment. 
