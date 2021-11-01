@@ -3,7 +3,9 @@
 ## by J. P. Itcovitz, Institute of Astronomy, University of Cambridge
 
 
-This code accompanies, and can be used to reproduce the results and figures of, Itcovitz et al. (2021) (doi:URL). The code is presented as a Python module, with an accompanying yml for reproducibility of the Python environment. 
+This code accompanies, and can be used to reproduce the results and figures of, Itcovitz et al. (2021) (doi:URL). 
+
+The code is presented as a Python module, with an accompanying yml for reproducibility of the Python environment. A helpful guide on managing conda environments can be found [here](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html).
 
 ## Code Structure
 
@@ -28,7 +30,7 @@ The module is structured as follows:
 
 The module almost exclusively contains relative pathways. As such, it is important that path pointers are correct. The first thing to check after install is that `dir_path` in `reduced_atmospheres/__init__.py` points to the general install folder (`INSTALL_DIRECTORY/itcovitz_reduced_atmospheres`), and **not** to the subdirectory `reduced_atmospheres`.
 
-FastChem (Stock et al. 2018) must be installed in order to perform initial conditions calcualtions for the model. [This repository](https://github.com/exoclime/FastChem) contains the latest release at the time of writing. The model must be told the install directory for FastChem via the `dir_fastchem` variable in `reduced_atmospheres/__init__.py`. The model edits the FastChem input and config files of its own accord. However, the verbose level of FastChem can be lowered or raised by the user (FastChem/input/config.input) - the recommended verbose level is 0 in order to avoid cluttering the console.
+FastChem (Stock et al. 2018) must be installed in order to perform initial conditions calcualtions for the model. At the time of writing, the latest release of the code can be found [here](https://github.com/exoclime/FastChem). The model must be told the install directory for FastChem via the `dir_fastchem` variable in `reduced_atmospheres/__init__.py`. The model edits the FastChem input and config files of its own accord. However, the verbose level of FastChem can be lowered or raised by the user (FastChem/input/config.input) - the recommended verbose level is 0 in order to avoid cluttering the console.
 
 
 ## Run Your First Model
