@@ -33,10 +33,16 @@ def get_dpi():
         # itcovitz U2415
         elif '518mm' in dimensions:
             dpi = 175
+        # Dom monitor
+        elif '510mm' in dimensions:
+            dpi = 175
 
     if len(dimensions) == 4:  # dual monitors
         # itcovitz U2415
         if '518mm' in dimensions:
+           dpi = 175
+        # Dom monitor
+        elif '510mm' in dimensions:
            dpi = 175
 
     return dpi

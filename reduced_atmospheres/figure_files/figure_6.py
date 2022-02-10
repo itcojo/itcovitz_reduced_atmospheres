@@ -1,6 +1,9 @@
+import csv
 import sys
 
 import h5py
+import matplotlib
+import matplotlib.gridspec as gridspec
 import matplotlib.lines as lines
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -26,74 +29,8 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
         'fO2_M': 'k'}
 
 
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def flatten(LIST):
-    """
-    Flattens list of lists into single list.
-
-    Parameters
-    ----------
-    LIST : list
-        List of lists to be flattened.
-
-    Returns
-    -------
-
-    """
-    return [item for sublist in LIST for item in sublist]
-
-
-def move_axes_across(ax0, ax1):
-    """
-    ax0 should be to the left of ax1.
-    """
-    # location of lower left and upper right corners of ax0
-    ax0_pos = ax0.get_position()
-    ax0_points = ax0_pos.get_points()
-    # location of lower left and upper right corners of ax1
-    ax1_pos = ax1.get_position()
-    ax1_points = ax1_pos.get_points()
-
-    # horizontal difference between axes
-    hor_diff = ax0_points[1][0] - ax1_points[0][0]
-
-    # move the left corner of ax1 leftwards to the centre of ax0
-    ax1_points[0][0] += 0.5 * hor_diff
-
-    # move the right side of ax1 left by the same amount, so that it
-    # keeps the same shape
-    ax1_points[1][0] += 0.5 * hor_diff
-
-    ax1_pos.set_points(ax1_points)
-    ax1.set_position(ax1_pos)
-
-
-def move_axes_up(ax0, ax1):
-    """
-    ax0 should be above ax1.
-    """
-    # location of lower left and upper right corners of ax0
-    ax0_pos = ax0.get_position()
-    ax0_points = ax0_pos.get_points()
-    # location of lower left and upper right corners of ax1
-    ax1_pos = ax1.get_position()
-    ax1_points = ax1_pos.get_points()
-
-    # vertical difference between axes
-    vert_diff = ax0_points[0][1] - ax1_points[1][1]
-
-    # move the upper corner of ax1 upwards to the lower corner of ax0
-    ax1_points[1][1] += vert_diff
-
-    # move the lower corner of ax1 upwards by the same amount, so that it
-    # keeps the same shape
-    ax1_points[0][1] += vert_diff
-
-    ax1_pos.set_points(ax1_points)
-    ax1.set_position(ax1_pos)
-
-
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_6():
     """
     Parameters
@@ -103,467 +40,307 @@ def plot_figure_6():
     -------
 
     """
-    masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10.,
-                         endpoint=True)
+    # range of impact masses [kg]
+    impactor_masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30,
+                                  base=10., endpoint=True)
 
-    labels = ['1A_', '1B_', '2_', '3A_', '3B_']
-    plot_mass_bas = [[] for _ in range(len(labels))]
-    plot_mass_per = [[] for _ in range(len(labels))]
-    h2_bas = [[] for _ in range(len(labels))]
-    h2_per = [[] for _ in range(len(labels))]
-    fo2_atm_bas = [[] for _ in range(len(labels))]
-    fo2_atm_per = [[] for _ in range(len(labels))]
-    fo2_melt_bas = [[] for _ in range(len(labels))]
-    fo2_melt_per = [[] for _ in range(len(labels))]
+    # calculate post-impact atmospheres
+    h2, h2o, co2, n2, co, ch4, pressures = [], [], [], [], [], [], []
+    h2_i, h2o_i, co2_i, n2_i, pressures_i = [], [], [], [], []
+    fo2_atmos, fo2_bas, fo2_per, fe_bas, fe_per = [], [], [], [], []
 
-    p_tot, iw_vals = [], []
+    # successfully converged impactor masses
+    masses_per, masses_bas = [], []
 
-    fac = 1e-4 / (4. * np.pi * gC.r_earth**2.)
+    # convert from moles to column density
+    fac = 1e-4 / (4. * np.pi * gC.r_earth ** 2.)
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Grab Data
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    for idx in range(len(labels)):
-        for m_imp in masses:
-            try:
-                # file name
-                var_str = "%.2e" % m_imp
-                var_str = var_str.replace('.', '_')
-                var_str = var_str.replace('+', '')
-                dir_mass = dir_path + '/output/m_imps/'
-                file = dir_mass + 'basalt_' + labels[idx] + var_str
+    for m_imp in impactor_masses:
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+        # File Name
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+        var_string = "%.2e" % m_imp
+        var_string = var_string.replace('.', '_')
+        var_string = var_string.replace('+', '')
 
-                # read data - with dissolution
-                with h5py.File(file + '.hdf5', 'r') as f:
-                    # unpack trackers
-                    h2_bas[idx].append(np.array(list(f['atmos/h2'])))
-                    fo2_atm_bas[idx].append(np.array(list(f['atmos/fo2'])))
-                    fo2_melt_bas[idx].append(np.array(list(f['melt/fo2'])))
+        # read data - peridotite
+        file = dir_path + '/output/m_imps/peridotite_3A_'
+        with h5py.File(file + var_string + '.hdf5', 'r') as f:
+            temp = f['temp'][()]
 
-                    # track which impactor masses successfully converged
-                    plot_mass_bas[idx].append(m_imp)
-            except:
-                pass
+            h2.append(np.array(list(f['atmos/h2']))[0] * fac)
+            h2o.append(np.array(list(f['atmos/h2o']))[0] * fac)
+            co2.append(np.array(list(f['atmos/co2']))[0] * fac)
+            n2.append(np.array(list(f['atmos/n2']))[0] * fac)
+            co.append(np.array(list(f['atmos/co']))[0] * fac)
+            ch4.append(np.array(list(f['atmos/ch4']))[0] * fac)
+            pressures.append(np.array(list(f['atmos/p_tot']))[0])
 
-    for idx in range(len(labels)):
-        for m_imp in masses:
-            try:
-                # file name
-                var_str = "%.2e" % m_imp
-                var_str = var_str.replace('.', '_')
-                var_str = var_str.replace('+', '')
-                dir_mass = dir_path + '/output/m_imps/'
-                file = dir_mass + 'peridotite_' + labels[idx] + var_str
+            h2o_i.append(np.array(list(f['initial/values']))[0] * fac)
+            h2_i.append(np.array(list(f['initial/values']))[1] * fac)
+            n2_i.append(np.array(list(f['initial/values']))[2] * fac)
+            co2_i.append(np.array(list(f['initial/values']))[3] * fac)
+            pressures_i.append(f['initial/pressure'][()])
 
-                # read data - with dissolution
-                with h5py.File(file + '.hdf5', 'r') as f:
-                    # unpack trackers
-                    h2_per[idx].append(np.array(list(f['atmos/h2'])))
-                    fo2_atm_per[idx].append(np.array(list(f['atmos/fo2'])))
-                    fo2_melt_per[idx].append(np.array(list(f['melt/fo2'])))
+            fo2_atmos.append(np.array(list(f['atmos/fo2']))[0])
+            fo2_per.append(np.array(list(f['melt/fo2']))[0])
+            fe_per.append(np.array(list(f['metal/fe']))[0])
+            masses_per.append(m_imp)
 
-                    # track which impactor masses successfully converged
-                    plot_mass_per[idx].append(m_imp)
+        # read data - basalt
+        file = dir_path + '/output/m_imps/basalt_3A_'
+        with h5py.File(file + var_string + '.hdf5', 'r') as f:
+            fo2_bas.append(np.array(list(f['melt/fo2']))[0])
+            fe_bas.append(np.array(list(f['metal/fe']))[0])
+            masses_bas.append(m_imp)
 
-                    if labels[idx] == '1A_':
-                        p_tot.append(list(f['atmos/p_tot'])[-1])
-                        iw_vals.append(
-                            float(eq_melt.fo2_iw(f['temp'][()], p_tot[-1])))
-            except:
-                pass
+    # partial pressures
+    p_h2, p_h2o, p_co2, p_n2, p_co, p_ch4, p_tot = [], [], [], [], [], [], []
+    p_h2_i, p_h2o_i, p_co2_i, p_n2_i, p_tot_i = [], [], [], [], []
+    for j in range(len(h2)):
+        n_tot = h2[j] + h2o[j] + co2[j] + n2[j] + co[j] + ch4[j]
+        n_tot_i = h2_i[j] + h2o_i[j] + co2_i[j] + n2_i[j]
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Set Up Plot Layout
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # set up plot layout
-    mosaic = [['1B_atm', '2_atm'],
-              ['1B_fo2', '2_fo2'],
-              ['3A_atm', '3B_atm'],
-              ['3A_fo2', '3B_fo2']]
-    flat_labels = flatten(mosaic)
+        p_h2.append(1e-5 * pressures[j] * h2[j] / n_tot)
+        p_h2o.append(1e-5 * pressures[j] * h2o[j] / n_tot)
+        p_co2.append(1e-5 * pressures[j] * co2[j] / n_tot)
+        p_n2.append(1e-5 * pressures[j] * n2[j] / n_tot)
+        p_co.append(1e-5 * pressures[j] * co[j] / n_tot)
+        p_ch4.append(1e-5 * pressures[j] * ch4[j] / n_tot)
+        p_tot.append(1e-5 * pressures[j])
 
-    fig, axs = plt.subplot_mosaic(mosaic, figsize=(6.5, 8.5), dpi=local_dpi)
-    plt.subplots_adjust(left=0.11, right=0.7, bottom=0.05, top=0.97,
-                        hspace=0.15, wspace=0.02)
-    plt.rcParams.update({'font.size': 10})
+        p_h2_i.append(1e-5 * pressures_i[j] * h2_i[j] / n_tot_i)
+        p_h2o_i.append(1e-5 * pressures_i[j] * h2o_i[j] / n_tot_i)
+        p_co2_i.append(1e-5 * pressures_i[j] * co2_i[j] / n_tot_i)
+        p_n2_i.append(1e-5 * pressures_i[j] * n2_i[j] / n_tot_i)
+        p_tot_i.append(1e-5 * pressures_i[j])
 
-    # move axes up
-    move_axes_up(axs['1B_atm'], axs['1B_fo2'])
-    move_axes_up(axs['2_atm'], axs['2_fo2'])
+    # FMQ buffer for various P & T
+    fmq_line = np.zeros(len(masses_per))
+    for k in range(len(fmq_line)):
+        fmq_line[k] = eq_melt.fo2_fmq(temp, pressures[k])
 
-    move_axes_up(axs['3A_atm'], axs['3A_fo2'])
-    move_axes_up(axs['3B_atm'], axs['3B_fo2'])
+    # IW buffer for various P & T
+    iw_line, iw_line_2 = np.zeros(len(masses_per)), np.zeros(len(masses_per))
+    for kk in range(len(iw_line)):
+        iw_line[kk] = eq_melt.fo2_iw(temp, pressures[kk])
+        iw_line_2[kk] = eq_melt.fo2_iw(temp, pressures[kk]) - 2.
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Axes Parameters - Specific
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # X-AXIS
-    # --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # plot
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    fig = plt.figure(figsize=(6.5, 4.5), dpi=local_dpi)
+    matplotlib.rcParams.update({'font.size': 9})
+    plot_params = {
+        'axes.facecolor': '1.',
+        'axes.edgecolor': '0.',
+        'axes.grid': False,
+        'axes.axisbelow': True,
+        'axes.labelcolor': '.15',
+        'figure.facecolor': '0.',
+        'grid.color': '0.92',
+        'grid.linestyle': '-',
+        'text.color': '0.15',
+        'xtick.color': '0.15',
+        'ytick.color': '0.15',
+        'xtick.direction': 'in',
+        'ytick.direction': 'in',
+        'lines.solid_capstyle': 'round',
+        'patch.edgecolor': 'w',
+        'image.cmap': 'rocket',
+        'font.family': ['sans-serif'],
+        'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans',
+                            'Bitstream Vera Sans', 'sans-serif'],
+        'patch.force_edgecolor': True,
+        'xtick.bottom': True,
+        'xtick.top': True,
+        'ytick.left': True,
+        'ytick.right': True,
+        'axes.spines.left': True,
+        'axes.spines.bottom': True,
+        'axes.spines.right': True,
+        'axes.spines.top': True}
+    margins = 0.05
+
+    gs = gridspec.GridSpec(5, 5)
+    plt.subplots_adjust(top=0.88, left=0.1, right=0.98, bottom=0.1,
+                        hspace=0.04, wspace=1.)
+
+    with sns.axes_style(plot_params):
+        ax0 = fig.add_subplot(gs[:3, :3])
+        ax0.minorticks_on()
+        ax0.margins(margins)
+
+        ax1 = fig.add_subplot(gs[3:, :3])
+        ax1.minorticks_on()
+        ax1.margins(margins)
+
+        ax2 = fig.add_subplot(gs[:3, 3:])
+        ax2.minorticks_on()
+        ax2.margins(margins)
+
+        ax3 = fig.add_subplot(gs[3:, 3:])
+        ax3.minorticks_on()
+        ax3.margins(margins)
+
+    # mass limits
+    masses = [mass * 1e-22 for mass in masses_per]
+
+    # mass ticks
     xticks = [2e21, 5e21, 1e22, 2e22]
     xticks = [X * 1e-22 for X in xticks]
 
-    masses = [M * 1e-22 for M in masses]
+    for ax in [ax0, ax1, ax2, ax3]:
+        ax.set_xlim([0.17, 3.2])
+        ax.set_xscale('log')
+        ax.set_xticks(xticks)
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+        ax.tick_params(axis='both', which='both', direction='in')
 
-    # x-axis properties, minor ticks, and margins
-    for ax in flat_labels:
-        axs[ax].set_xlim([0.17, 3.3])
-        axs[ax].set_xscale('log')
-        axs[ax].set_xticks(xticks)
-        axs[ax].xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-        axs[ax].tick_params(axis='both', which='both', direction='in')
+    ax0.text(x=3., y=4e4, s='(a)', ha='right', va='top')
+    ax1.text(x=3., y=625, s='(b)', ha='right', va='top')
+    ax2.text(x=0.215, y=-6.9, s='(c)', va='top', ha='center')
+    ax3.text(x=0.215, y=8e22, s='(d)', ha='center')
 
-        axs[ax].axvline(x=2., color=cols['CO2'], linewidth=1.)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # standard value impactor mass
+    ax0.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
+    ax0.text(x=2., y=7e1, s='standard', fontsize=7, color='grey',
+             rotation=270)
 
-        axs[ax].minorticks_on()
-        axs[ax].margins(0.05)
+    ax0.plot(masses, ch4, color=cols['CH4'], marker='o', markersize=3)
 
-    # no x-ticks and labels on atmosphere subplots
-    for ax in ['1B_atm', '2_atm', '3A_atm', '3B_atm']:
-        axs[ax].tick_params(axis='x', which='both', top=True, bottom=True,
-                            labeltop=False, labelbottom=False)
-    # x-ticks and labels on fugacity subplots
-    for ax in ['1B_fo2', '2_fo2', '3A_fo2', '3B_fo2']:
-        axs[ax].tick_params(axis='x', which='both', top=True, bottom=True,
-                            labeltop=False, labelbottom=True)
-    # x-axis labels
-    for ax in ['3A_fo2', '3B_fo2']:
-        axs[ax].set_xlabel('Impactor Mass /10$^{22}$ kg')
+    ax0.plot(masses, n2_i, color=cols['N2'], linestyle='', marker='x', markersize=3)
+    ax0.plot(masses, n2, color=cols['N2'], marker='o', markersize=3)
 
-    # --- --- --- --- --- ---
-    # Y-AXIS
-    # --- --- --- --- --- ---
-    # y-ticks and labels on left column
-    for ax in ['1B_atm', '1B_fo2', '3A_atm', '3A_fo2']:
-        axs[ax].tick_params(axis='y', which='both', left=True, right=True,
-                            labelleft=True, labelright=False)
-    # y-ticks and labels on right column
-    for ax in ['2_atm', '2_fo2']:
-        axs[ax].tick_params(axis='y', which='both', left=True, right=True,
-                            labelleft=False, labelright=False)
-    for ax in ['3B_atm', '3B_fo2']:
-        axs[ax].tick_params(axis='y', which='both', left=True, right=True,
-                            labelleft=False, labelright=False)
-    # y-axis labels
-    for ax in ['1B_atm', '3A_atm']:
-        axs[ax].set_ylabel('Column Density \n/moles cm$^{-2}$', fontsize=9)
-    for ax in ['1B_fo2', '3A_fo2']:
-        axs[ax].set_ylabel('$\log_{10}($fO$_2)$', fontsize=9)
+    ax0.plot(masses, co2_i, color=cols['CO2'], linestyle='', marker='x', markersize=3)
+    ax0.plot(masses, co2, color=cols['CO2'], marker='o', markersize=3)
 
-    # y-axis limits and scales
-    axs['1B_atm'].set_ylim([2e1, 6e4])
-    axs['1B_atm'].set_yscale('log')
-    axs['1B_fo2'].set_ylim([-14.9, -7.3])
+    ax0.plot(masses, co, color=cols['CO'], marker='o', markersize=3)
 
-    for ax in ['2_atm', '3A_atm', '3B_atm']:
-        axs[ax].set_ylim(axs['1B_atm'].get_ylim())
-        axs[ax].set_yscale('log')
-    for ax in ['2_fo2', '3A_fo2', '3B_fo2']:
-        axs[ax].set_ylim(axs['1B_fo2'].get_ylim())
+    ax0.plot(masses, h2o_i, color=cols['H2O'], linestyle='', marker='x', markersize=3)
+    ax0.plot(masses, h2o, color=cols['H2O'], marker='o', markersize=3)
 
-    # --- --- --- --- --- ---
-    # COLUMN TITLES
-    # --- --- --- --- --- ---
-    titles = ['Model 1B', 'Model 2', 'Model 3A', 'Model 3B']
-    titled_axes = ['1B_atm', '2_atm', '3A_atm', '3B_atm']
-    for idx in range(len(titled_axes)):
-        axs[titled_axes[idx]].text(x=0.01, y=1.04, s=titles[idx], ha='left',
-                                   transform=axs[titled_axes[idx]].transAxes,
-                                   fontsize=9)
+    ax0.plot(masses, h2_i, color=cols['H2'], linestyle='', marker='x', markersize=3)
+    ax0.plot(masses, h2, color=cols['H2'], marker='o', markersize=3)
 
-    # --- --- --- --- --- ---
-    # STANDARD IMPACTOR MASS
-    # --- --- --- --- --- ---
-    for ax in flat_labels:
-        axs[ax].axvline(x=2., color='grey', linewidth=1.)
+    ax0.set_xscale('log')
+    ax0.set_xticks(xticks)
+    ax0.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
 
-    # label for Standard impactor mass line
-    axs['1B_atm'].text(x=2., y=1e3, s='standard', fontsize=8, color='grey',
-                      rotation=270, ha='left', va='top')
+    ax0.set_ylabel('Column Density /moles cm$^{-2}$')
+    ax0.set_ylim([15., 5e4])
+    ax0.set_yscale('log')
 
-    # --- --- --- --- --- ---
-    # LEGEND
-    # --- --- --- --- --- ---
     handles = []
-    handles.append(lines.Line2D([0.], [0.], color=cols['H2'], label='H$_2$',
-                                linestyle='-', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['NH3'], linestyle='-',
-                                label='fO$_2$ Atmos', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle='-',
-                                label='fO$_2$ Melt', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle='',
-                                marker='',  label='', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle=':',
-                                label='fiducial', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle='--',
-                                label='post-impact', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle='-',
-                                label='post-equilibration', linewidth=2))
-    # handles.append(lines.Line2D([0.], [0.], color=cols['CO2'], linestyle='',
-    #                             marker='x', markersize=4, label='no H2O partitioning'))
+    handles.append(lines.Line2D([0.], [0.], label='H$_2$O', color=cols['H2O'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='H$_2$', color=cols['H2'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='CO$_2$', color=cols['CO2'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='N$_2$', color=cols['N2'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='CO', color=cols['CO'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='CH4', color=cols['CH4'],
+                                linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='No Atmos LTE', color='grey',
+                                linestyle='', marker='x', markersize=3))
+    handles.append(lines.Line2D([0.], [0.], label='Atmos LTE', color='grey',
+                                linestyle='-', marker='o'))
 
-    axs['2_atm'].legend(handles=handles, loc='upper left', ncol=1, fontsize=8,
-                        bbox_to_anchor=(1.03, 1.01))
+    ax0.legend(handles=handles, loc='lower left', ncol=4, fontsize=8,
+               bbox_to_anchor=(-0.01, 1.01))
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Model 1A Comparison Lines
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # masses successfully calculated for Model 1A
-    masses = [M * 1e-22 for M in plot_mass_bas[0]]
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # standard value impactor mass
+    ax1.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
 
-    for ax in ['1B_atm', '2_atm', '3A_atm', '3B_atm']:
-        # hydrogen
-        axs[ax].plot(masses, [h2_bas[0][i][-1] * fac for i in range(len(masses))],
-                     color=cols['H2'], linestyle=':', linewidth=1)
+    # ax1.plot(masses, p_ch4, color=cols['CH4'])
+    # ax1.plot(masses, p_n2, color=cols['N2'])
+    ax1.plot(masses, p_co2, color=cols['CO2'], marker='o', markersize=3)
+    # ax1.plot(masses, p_co, color=cols['CO'])
+    ax1.plot(masses, p_h2o, color=cols['H2O'], marker='o', markersize=3)
+    ax1.plot(masses, p_h2, color=cols['H2'], marker='o', markersize=3)
+    ax1.plot(masses, p_tot, color='grey')
 
-    for ax in ['1B_fo2', '2_fo2', '3A_fo2', '3B_fo2']:
-        # fO2 atmos
-        axs[ax].plot(masses, [fo2_atm_bas[0][i][-1] for i in range(len(masses))],
-                     color=cols['NH3'], linestyle=':', linewidth=1)
-        # fO2 melt
-        axs[ax].plot(masses, [fo2_melt_bas[0][i][-1] for i in range(len(masses))],
-                     color=cols['CO2'], linestyle=':', linewidth=1)
-        axs[ax].plot(masses, [fo2_melt_per[0][i][-1] for i in range(len(masses))],
-                     color=cols['CO2'], linestyle=':', linewidth=1)
+    ax1.set_xlabel('Impactor Mass /10$^{22}$kg')
+    ax1.set_xscale('log')
+    ax1.set_xticks(xticks)
+    ax1.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
 
-    for ax in ['1B_fo2', '2_fo2', '3B_fo2']:
-        axs[ax].plot(masses, [item - 2. for item in iw_vals],
-                     color='grey', linestyle='--', linewidth=1)
+    ax1.set_ylabel('Partial Pressure /bar')
+    ax1.set_ylim([-50., 650.])
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Model 1B
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # masses successfully calculated for Model 1B
-    masses = [M * 1e-22 for M in plot_mass_bas[1]]
+    ax1.text(x=1.9, y=610, s='total pressure', fontsize=7, color='grey',
+             rotation=-7, ha='right', va='top')
 
-    # final H2
-    axs['1B_atm'].plot(masses, [h2_bas[1][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # standard value impactor mass
+    ax2.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
 
-    # --- --- --- --- --- ---
-    # final atmosphere fO2
-    axs['1B_fo2'].plot(masses, [fo2_atm_bas[1][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
+    # atmosphere fO2
+    ax2.plot(masses, fo2_atmos, color=cols['NH3'], linewidth=1.1)
+    ax2.text(x=1.75, y=-9.8, s='Atmosphere', color=cols['NH3'],
+             fontsize=7, rotation=-23, ha='right', va='bottom')
 
-    # final melt phase fO2
-    axs['1B_fo2'].plot(masses, [fo2_melt_bas[1][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-    axs['1B_fo2'].plot(masses, [fo2_melt_per[1][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
+    # melt phase fO2
+    ax2.plot(masses, fo2_bas, color=cols['CO2'], linewidth=1.1)
+    ax2.text(x=0.212, y=-13.4, s='Basalt', color=cols['CO2'],
+             fontsize=7, ha='left', va='bottom')
 
-    # labels
-    axs['1B_fo2'].text(masses[0], 1.01 * fo2_melt_bas[1][0][-1], s='B',
-                       color=cols['CO2'], va='top')
-    axs['1B_fo2'].text(masses[0], 1.01 * fo2_melt_per[1][0][-1], s='P',
-                       color=cols['CO2'], va='top')
-    axs['1B_fo2'].text(1.8, 1.01 * fo2_melt_bas[1][0][-1], s='ΔFMQ = 0',
-                       fontsize=7, color=cols['CO2'], va='top', ha='right')
-    axs['1B_fo2'].text(masses[0], iw_vals[0] - 2.1, s='ΔIW = -2',
-                       fontsize=7, color='grey', va='top', ha='left')
+    ax2.plot(masses, fo2_per, color=cols['CO2'], linewidth=1.1)
+    ax2.text(x=0.2, y=-14.2, s='Peridotite', color=cols['CO2'],
+             fontsize=7, ha='left', va='top')
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Model 2
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # masses successfully calculated for Model 2
-    masses = [M * 1e-22 for M in plot_mass_bas[2]]
+    # FMQ comparison line
+    ax2.plot(masses, fmq_line, color='grey', linestyle=':')
+    ax2.text(x=1.8, y=fmq_line[-1], s='\u0394FMQ=0', color='grey',
+             fontsize=8, ha='right', va='bottom')
 
-    # initial H2
-    axs['2_atm'].plot(masses, [h2_bas[2][i][0] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='--', linewidth=1)
+    # IW comparison line
+    ax2.plot(masses, iw_line, color='grey', linestyle=':')
+    ax2.text(x=masses[0], y=iw_line[0], s='\u0394IW=0', color='grey',
+             fontsize=8, ha='left', va='bottom')
 
-    # final H2
-    axs['2_atm'].plot(masses, [h2_bas[2][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
-    axs['2_atm'].plot(masses, [h2_per[2][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
+    # IW-2 comparison line
+    ax2.plot(masses, iw_line_2, color='grey', linestyle=':')
+    ax2.text(x=1.8, y=iw_line_2[0], s='\u0394IW=-2', color='grey',
+             fontsize=8, ha='right', va='bottom')
 
-    # labels
-    axs['2_atm'].text(x=2.45, y=0.88 * h2_bas[2][-1][-1] * fac, s='B',
-                      color=cols['H2'], ha='left', va='center')
-    axs['2_atm'].text(x=2.45, y=1.17 * h2_per[2][-1][-1] * fac, s='P',
-                      color=cols['H2'], ha='left', va='center')
+    ax2.set_xscale('log')
+    ax2.set_xticks(xticks)
+    ax2.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+    ax2.tick_params(axis="x", bottom=True, top=True, labeltop=True,
+                    labelbottom=False)
 
-    # --- --- --- --- --- ---
-    # init atmosphere fO2
-    axs['2_fo2'].plot(masses, [fo2_atm_bas[2][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
-    axs['2_fo2'].plot(masses, [fo2_atm_per[2][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
+    ax2.set_ylabel('$\log_{10}$(fO$_2$)')
+    ax2.set_ylim([-14.8, -6.6])
 
-    # init melt phase fO2
-    axs['2_fo2'].plot(masses, [fo2_melt_bas[2][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
-    axs['2_fo2'].plot(masses, [fo2_melt_per[2][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # standard value impactor mass
+    ax3.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
 
-    # final atmosphere fO2
-    axs['2_fo2'].plot(masses, [fo2_atm_bas[2][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
-    axs['2_fo2'].plot(masses, [fo2_atm_per[2][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
+    # iron in melt phase
+    idxs = [i for i, e in enumerate(fe_bas) if e != 0]
+    ax3.plot([masses[i] for i in idxs], [fe_bas[i] for i in idxs],
+             color='k', linewidth=1.)
+    ax3.text(x=0.7, y=5e21, s='Basalt', color='k',
+             fontsize=7, rotation=18, ha='left', va='bottom')
 
-    # final melt phase fO2
-    axs['2_fo2'].plot(masses, [fo2_melt_bas[2][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-    axs['2_fo2'].plot(masses, [fo2_melt_per[2][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
+    ax3.plot(masses, fe_per, color='k', linewidth=1.)
+    ax3.text(x=0.205, y=1e22, s='Peridotite', color='k',
+             fontsize=7, rotation=18, ha='left', va='bottom')
 
-    # labels
-    axs['2_fo2'].text(x=2.45, y=fo2_melt_bas[2][-1][0], s='B',
-                      color=cols['CO2'], ha='left', va='center')
-    axs['2_fo2'].text(x=2.45, y=fo2_melt_per[2][-1][0], s='P',
-                      color=cols['CO2'], ha='left', va='center')
+    ax3.set_xlabel('Impactor Mass /10$^{22}$kg')
+    ax3.set_xscale('log')
+    ax3.set_xticks(xticks)
+    ax3.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
 
-    axs['2_fo2'].text(x=2.45, y=fo2_melt_bas[2][-1][-1], s='B',
-                      color=cols['CO2'], ha='left', va='center')
-    axs['2_fo2'].text(x=2.45, y=fo2_melt_per[2][-1][-1], s='P',
-                      color=cols['CO2'], ha='left', va='center')
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Model 3A
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # masses successfully calculated for Model 3A
-    masses = [M * 1e-22 for M in plot_mass_bas[3]]
-
-    # initial H2
-    axs['3A_atm'].plot(masses, [h2_bas[3][i][0] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='--', linewidth=1)
-    axs['3A_atm'].plot(masses, [h2_per[3][i][0] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='--', linewidth=1)
-
-    # final H2
-    axs['3A_atm'].plot(masses, [h2_bas[3][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
-    axs['3A_atm'].plot(masses, [h2_per[3][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
-
-    # labels
-    axs['3A_atm'].text(x=2.6, y=0.80 * h2_bas[3][-1][-1] * fac, s='B',
-                       color=cols['H2'], ha='left', va='center')
-    axs['3A_atm'].text(x=2.6, y=1.10 * h2_per[3][-1][-1] * fac, s='P',
-                       color=cols['H2'], ha='left', va='center')
-
-    # --- --- --- --- --- ---
-    # init atmosphere fO2
-    axs['3A_fo2'].plot(masses, [fo2_atm_bas[3][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
-    axs['3A_fo2'].plot(masses, [fo2_atm_per[3][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
-
-    # init melt phase fO2
-    axs['3A_fo2'].plot(masses, [fo2_melt_bas[3][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
-    axs['3A_fo2'].plot(masses, [fo2_melt_per[3][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
-
-    # final atmosphere fO2
-    axs['3A_fo2'].plot(masses, [fo2_atm_bas[3][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
-    axs['3A_fo2'].plot(masses, [fo2_atm_per[3][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
-
-    # final melt phase fO2
-    axs['3A_fo2'].plot(masses, [fo2_melt_bas[3][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-    axs['3A_fo2'].plot(masses, [fo2_melt_per[3][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-
-    # labels
-    axs['3A_fo2'].text(x=0.2, y=fo2_melt_bas[3][0][0], s='B',
-                       color=cols['CO2'], ha='left', va='bottom')
-    axs['3A_fo2'].text(x=0.2, y=1.01 * fo2_melt_per[3][0][0], s='P',
-                       color=cols['CO2'], ha='left', va='top')
-
-    axs['3A_fo2'].text(x=2.6, y=fo2_melt_bas[3][-1][-1], s='B',
-                       color=cols['CO2'], ha='left', va='center')
-    axs['3A_fo2'].text(x=2.6, y=1.01 * fo2_melt_per[3][-1][-1], s='P',
-                       color=cols['CO2'], ha='left', va='center')
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # Model 3B
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # masses successfully calculated for Model 3B
-    masses = [M * 1e-22 for M in plot_mass_bas[4]]
-
-    # initial H2
-    # axs['3B_atm'].plot(masses, [h2_bas[4][i][0] * fac for i in range(len(masses))],
-    #                    color=gC.custom_colors[0], linestyle='--', linewidth=1)
-    axs['3B_atm'].plot(masses, [h2_per[4][i][0] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='--', linewidth=1)
-
-    # final H2
-    axs['3B_atm'].plot(masses, [h2_bas[4][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
-    axs['3B_atm'].plot(masses, [h2_per[4][i][-1] * fac for i in range(len(masses))],
-                       color=cols['H2'], linestyle='-', linewidth=1)
-
-    # labels
-    axs['3B_atm'].text(x=2.6, y=h2_bas[4][-1][-1] * fac, s='B',
-                       color=cols['H2'], ha='left', va='center')
-    axs['3B_atm'].text(x=2.6, y=h2_per[4][-1][-1] * fac, s='P',
-                       color=cols['H2'], ha='left', va='center')
-
-    # --- --- --- --- --- ---
-    # init atmosphere fO2
-    axs['3B_fo2'].plot(masses, [fo2_atm_bas[4][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
-    axs['3B_fo2'].plot(masses, [fo2_atm_per[4][i][0] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='--', linewidth=1)
-
-    # init melt phase fO2
-    axs['3B_fo2'].plot(masses, [fo2_melt_bas[4][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
-    axs['3B_fo2'].plot(masses, [fo2_melt_per[4][i][0] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='--', linewidth=1)
-
-    # final atmosphere fO2
-    axs['3B_fo2'].plot(masses, [fo2_atm_bas[4][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
-    axs['3B_fo2'].plot(masses, [fo2_atm_per[4][i][-1] for i in range(len(masses))],
-                       color=cols['NH3'], linestyle='-', linewidth=1)
-
-    # final melt phase fO2
-    axs['3B_fo2'].plot(masses, [fo2_melt_bas[4][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-    axs['3B_fo2'].plot(masses, [fo2_melt_per[4][i][-1] for i in range(len(masses))],
-                       color=cols['CO2'], linestyle='-', linewidth=1)
-
-    # labels
-    axs['3B_fo2'].text(x=2.6, y=fo2_melt_bas[4][-1][0], s='B',
-                       color=cols['CO2'], ha='left', va='center')
-    axs['3B_fo2'].text(x=0.2, y=1.01 * fo2_melt_per[4][0][0], s='P',
-                       color=cols['CO2'], ha='left', va='top')
-
-    axs['3B_fo2'].text(x=2.6, y=fo2_melt_bas[4][-1][-1], s='B',
-                       color=cols['CO2'], ha='left', va='center')
-    axs['3B_fo2'].text(x=2.6, y=1.01 * fo2_melt_per[4][-1][-1], s='P',
-                       color=cols['CO2'], ha='left', va='center')
-
-    # --- --- --- --- --- --- --- ---
-    # text description of models
-    axs['2_atm'].text(x=4.1, y=5e1, s='P - peridotitic melt')
-    axs['2_atm'].text(x=4.1, y=1e1, s='B - basaltic melt')
-
-    axs['2_fo2'].text(x=4.1, y=-9.7, s='(Fiducial)')
-    axs['2_fo2'].text(x=4.1, y=-10.4, s='  \u2A2F melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-11.1, s='  \u2A2F iron distribution')
-
-    axs['2_fo2'].text(x=4.1, y=-12.4, s='(Model 1B)')
-    axs['2_fo2'].text(x=4.1, y=-13.1, s='  \u2A2F melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-13.8, s='  \u2713 iron distribution')
-
-    axs['2_fo2'].text(x=4.1, y=-15.1, s='(Model 2)')
-    axs['2_fo2'].text(x=4.1, y=-15.8, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-16.5, s='  \u2A2F iron distribution')
-
-    axs['2_fo2'].text(x=4.1, y=-17.8, s='(Model 3A)')
-    axs['2_fo2'].text(x=4.1, y=-18.5, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-19.2, s='  \u2713 iron distribution')
-    axs['2_fo2'].text(x=4.1, y=-19.9, s='  [interior iron in melt]')
-
-    axs['2_fo2'].text(x=4.1, y=-21.2, s='(Model 3B)')
-    axs['2_fo2'].text(x=4.1, y=-21.9, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-22.6, s='  \u2713 iron distribution')
-    axs['2_fo2'].text(x=4.1, y=-23.3, s='  [interior iron in other]')
+    ax3.set_ylabel('Fe /moles')
+    ax3.set_ylim([6e20, 1.5e23])
+    ax3.set_yscale('log')
 
     plt.savefig(dir_path + '/figures/figure_6.pdf', dpi=200)
     # plt.show()

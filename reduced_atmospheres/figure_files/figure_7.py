@@ -1,8 +1,8 @@
+import sys
 from copy import deepcopy as dcop
-import h5py
-import matplotlib.lines as lines
+import matplotlib.gridspec as gs
+from matplotlib.patches import ConnectionPatch
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import seaborn as sns
 
@@ -25,187 +25,227 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
         'fO2_M': 'k'}
 
 
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
+                    sys_id, imp_comp='E'):
+    """
+    Adapted version of 'atmos_init' from 'equilibrate_melt', specifically made
+    for plotting the figure.
+
+    Parameters
+    ----------
+    mass_imp : float [kg]
+        Mass of the impactor.
+    vel_imp : float [km s-1]
+        Impact velocity.
+    init_ocean : float [Earth Oceans]
+        Initial amount of water on the planet receiving impact.
+    p_atmos : dict
+        Composition of the atmosphere.
+        Keys (str) full formulae of molecules.
+        Values (float) partial pressure of each species [bar].
+    temp : float [K]
+        Temperature of the atmosphere before impact.
+    sys_id : str
+        Label of the atmosphere-magma system ('system_id'), used as file names
+    imp_comp : str
+        Impactor composition indicator ('C': carbonaceous chondrite,
+        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
+        'E': enstatite chondrite, 'F': iron meteorite)
+
+    Returns
+    -------
+    p_atmos (updated)
+    n_atmos : dict
+        Composition of the atmosphere.
+        Keys (str) full formulae of molecules.
+        Values (float) number of moles of species in atmosphere.
+    p_list : list
+        Partial pressure dictionaries at each stage of the calculations.
+        [initial, erosion, ocean vaporisation, impactor vaporisation,
+    n_list : list
+        Moles dictionaries at each stage of the calculations.
+
+    """
+    p_init = dcop(p_atmos)  # initial input atmosphere
+    for mol in list(p_init.keys()):
+        p_init[mol] = p_init[mol] * 1e5
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # pre-impact atmosphere
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # convert bars to Pa
+    for mol in list(p_atmos.keys()):
+        p_atmos[mol] = p_atmos[mol] * 1e5
+
+    # total pressure
+    p_tot = np.sum(list(p_atmos.values()))
+
+    # a.x = b matrix equation, where x is a list of molecules' moles
+    mols = list(p_atmos.keys())
+    a = np.zeros((len(mols), len(mols)))
+    for ii in range(len(a[0])):  # columns
+        for i in range(len(a) - 1):  # rows
+            if i == ii:
+                a[i, ii] = (p_tot / p_atmos[mols[i]]) - 1
+            else:
+                a[i, ii] = -1
+        # final row
+        a[-1, ii] = gC.mol_phys_props(mols[ii])[0] * 1e-3 / gC.u
+
+    b = np.zeros(len(mols))
+    b[len(mols) - 1] = 4. * np.pi * gC.r_earth ** 2. * p_tot / gC.g
+
+    solve = np.linalg.solve(a, b)
+
+    # unpack solution into moles dictionary
+    n_atmos = {}
+    for j in range(len(mols)):
+        n_atmos[mols[j]] = solve[j]
+
+    n_init = dcop(n_atmos)  # initial input atmosphere
+
+    # atmosphere mass
+    m_atm = 0.
+    for mol in list(p_atmos.keys()):
+        m_atm += n_atmos[mol] * gC.common_mol_mass[mol]
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # atmospheric erosion by the impact
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # impactor diameter [km]
+    d_imp = eq_melt.impactor_diameter(mass_imp, imp_comp)
+
+    [X_ejec, n_atmos] = eq_melt.atmos_ejection(n_atmos, mass_imp, d_imp,
+                                               vel_imp,  param=0.7)
+
+    # recalculate pressures
+    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
+
+    p_erosion, n_erosion = dcop(p_atmos), dcop(n_atmos)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # impactor vaporisation of volatiles
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    h2o_degas = eq_melt.vaporisation(mass_imp, imp_comp)
+
+    if 'H2O' in list(n_atmos.keys()):
+        n_atmos['H2O'] += h2o_degas
+    else:
+        n_atmos['H2O'] = h2o_degas
+
+    # recalculate pressures
+    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
+
+    p_degas, n_degas = dcop(p_atmos), dcop(n_atmos)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # injection of H2O into the atmosphere (vaporisation only)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # convert units of Earth Oceans into moles
+    EO = 1.37e21  # [kg]
+    EO_moles = EO / gC.common_mol_mass['H2O']  # [moles]
+    init_h2o = init_ocean * EO_moles  # [moles]
+
+    # add H2O and H2 into the atmosphere
+    if 'H2O' in list(n_atmos.keys()):
+        n_atmos['H2O'] += init_h2o
+    else:
+        n_atmos['H2O'] = init_h2o
+
+    # recalculate pressures
+    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
+
+    p_ocean, n_ocean = dcop(p_atmos), dcop(n_atmos)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # interaction of the impactor iron with the atmosphere
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # wt% of impactor mass is iron used to reduce oceans
+    # Fe + H2O --> FeO + H2
+    init_reduce_mass = fe_frac * gC.iron_wt[imp_comp] * mass_imp  # [kg]
+    init_reduce_moles = init_reduce_mass / gC.common_mol_mass['Fe']  # [moles]
+
+    if init_reduce_moles > init_h2o + n_atmos['CO2']:
+        print("More Fe than H2O + CO2 for impactor mass = %.2e." % mass_imp)
+        sys.exit()
+    elif init_reduce_moles > init_h2o:
+        print("More Fe than H2O for impactor mass = %.2e." % mass_imp)
+    else:
+        # add H2O and H2 into the atmosphere
+        n_atmos['H2O'] -= init_reduce_moles
+        n_atmos['H2'] = init_reduce_moles
+
+    # recalculate pressures
+    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
+
+    p_iron, n_iron = dcop(p_atmos), dcop(n_atmos)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # FastChem Equilibrium Calculations
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --
+    pre_fc = dcop(n_atmos)
+
+    # abundances for FastChem
+    abund = eq_melt.calc_elem_abund(n_atmos)
+
+    # prepare FastChem config files
+    eq_melt.write_fastchem(dir_path + '/reduced_atmospheres/data/FastChem/' +
+                           sys_id, abund, temp,
+                           float(np.sum(list(p_atmos.values()))))
+
+    # run automated FastChem
+    eq_melt.run_fastchem_files(sys_id)
+
+    # read FastChem output
+    [p_atmos, n_atmos] = eq_melt.read_fastchem_output(sys_id)
+
+    p_chem, n_chem = dcop(p_atmos), dcop(n_atmos)
+
+    return p_atmos, n_atmos,\
+           [p_init, p_erosion, p_degas, p_ocean, p_iron, p_chem],\
+           [n_init, n_erosion, n_degas, n_ocean, n_iron, n_chem]
+
+
+def zero_to_nan(array_1d):
+    """
+    Change all zeroes in input array to numpy nans.
+
+    Parameters
+    ----------
+    array_1d : list
+
+    Returns
+    -------
+
+    """
+    for idx in range(len(array_1d)):
+        if array_1d[idx] == 0.:
+            array_1d[idx] = np.nan
+
+    return array_1d
+
+
 def plot_figure_7():
-    # impactor masses`
-    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10.,
-                         endpoint=True)
+    """
+    Plots partial pressures of species from pre-impact to post-equilibration.
 
-    # convert moles to column densities
-    fac = 1e-4 / (4. * np.pi * gC.r_earth**2.)
+    Parameters
+    ----------
 
-    # standard values
-    m_imp, v_imp, theta = 2e22, 20.7, 45.  # [kg], [km s-1], [deg]
-    temp, p_tot, h2o_init, tol = 1500., 450. * 1e5, 0.05, 1e-5  # [K], [Pa], [wt%]
+    Returns
+    -------
 
+    """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # SCALING BETWEEN fO2 AND FERRIC-TO-IRON RATIOS
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # PERIDOTITE
-    # --- --- --- --- --- ---
-    fe_max = 0.18
-    iron_ratios_per, fo2_vals_per = np.arange(0.01, fe_max, 0.02), []
-
-    # mass of the magma [kg]
-    m_mag = eq_melt.impact_melt_mass(m_imp, v_imp, theta)
-
-    for ratio in iron_ratios_per:
-        # calculate moles from wt% prescription (includes adding H2O)
-        n_melt = eq_melt.peridotite_comp_by_fe_ratio(m_mag, ratio, gC.klb, h2o_init)
-
-        oxides = {}
-        for mol in list(n_melt.keys()):
-            if mol not in ['Fe2O3', 'FeO', 'H2O']:
-                oxides[mol] = n_melt[mol]
-
-        fo2_melt = eq_melt.calc_peridotite_fo2(n_melt['Fe2O3'], n_melt['FeO'],
-                                               oxides, temp, p_tot)
-
-        fo2_vals_per.append(fo2_melt - eq_melt.fo2_fmq(temp, p_tot))
-
-    # --- --- --- --- --- ---
-    # BASALT
-    # --- --- --- --- --- ---
-    iron_ratios_bas = []
-    fo2_vals_bas = [val for val in fo2_vals_per]
-
-    for fo2_val in [val for val in fo2_vals_per]:
-        # calculate moles from wt% prescription (includes adding H2O)
-        n_melt = eq_melt.basalt_comp_by_fo2(m_mag, 'FMQ', fo2_val, gC.basalt,
-                                            0.05, p_tot, temp)
-        oxides = {}
-        for mol in list(n_melt.keys()):
-            if mol not in ['Fe2O3', 'FeO', 'H2O']:
-                oxides[mol] = n_melt[mol]
-
-        fe2o3, feo = dcop(n_melt['Fe2O3']), dcop(n_melt['FeO'])
-
-        iron_ratios_bas.append(2. * fe2o3 / (2. * fe2o3 + feo))
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # IMPORT DATA FROM MODELS 3A
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # BASALT
-    # --- --- --- --- --- ---
-    ferric_bas_init, ferric_bas_fin = [], []
-    fo2_bas_init, fo2_bas_fin = [], []
-    m_melt_bas = []
-    for item in masses:
-        # file name
-        var_str = "%.2e" % item
-        var_str = var_str.replace('.', '_')
-        var_str = var_str.replace('+', '')
-        dir_mass = dir_path + '/output/m_imps/'
-        file = dir_mass + 'basalt_3A_' + var_str
-
-        # read data
-        with h5py.File(file + '.hdf5', 'r') as f:
-            temp = f['temp'][()]
-            p_tot = np.array(list(f['atmos/p_tot']))[-1]
-
-            fe_3 = np.array(list(f['melt/fe2o3']))
-            fe_2 = np.array(list(f['melt/feo']))
-            fe_0 = np.array(list(f['metal/fe']))
-            ferric_bas_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_bas_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
-
-            fo2_melt = np.array(list(f['melt/fo2']))
-            fo2_bas_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
-            fo2_bas_fin.append(fo2_melt[-1] - eq_melt.fo2_fmq(temp, p_tot))
-
-            m_melt_bas.append(list(f['melt/mass'])[-1])
-
-    # --- --- --- --- --- ---
-    # PERIDOTITE
-    # --- --- --- --- --- ---
-    ferric_per_init, ferric_per_fin = [], []
-    fo2_per_init, fo2_per_fin = [], []
-    m_melt_per = []
-    for item in masses:
-        # file name
-        var_str = "%.2e" % item
-        var_str = var_str.replace('.', '_')
-        var_str = var_str.replace('+', '')
-        dir_mass = dir_path + '/output/m_imps/'
-        file = dir_mass + 'peridotite_3A_' + var_str
-
-        # read data
-        with h5py.File(file + '.hdf5', 'r') as f:
-            temp = f['temp'][()]
-            p_tot = np.array(list(f['atmos/p_tot']))[-1]
-
-            fe_3 = np.array(list(f['melt/fe2o3']))
-            fe_2 = np.array(list(f['melt/feo']))
-            fe_0 = np.array(list(f['metal/fe']))
-            ferric_per_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_per_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
-
-            fo2_melt = np.array(list(f['melt/fo2']))
-            fo2_per_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
-            fo2_per_fin.append(fo2_melt[-1] - eq_melt.fo2_fmq(temp, p_tot))
-
-            m_melt_per.append(list(f['melt/mass'])[-1])
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # REMIXING OF IMPACT-GENERATED MELT PHASES WITH BSE UNMELTED MANTLE
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    mixed_ferric_per, mixed_ferric_bas = [], []
-    for i in range(len(masses)):
-        # mass of the magma [kg]
-        m_mag = eq_melt.impact_melt_mass(masses[i], v_imp, theta)
-
-        # mass of unmelted mantle [kg]
-        m_whole_mantle = (1. - 0.3201) * gC.m_earth
-        m_sol = m_whole_mantle - m_mag
-
-        # molar composition of solid mantle
-        n_solid = \
-            eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
-
-        # ferric-to-iron ratio of solid mantle
-        fe3_frac_solid = 2. * n_solid['Fe2O3'] / \
-                         (2. * n_solid['Fe2O3'] + n_solid['FeO'])
-
-        # mix together using mass fractions --- --- --- --- --- --- --- --- --- ---
-        mix_per = (m_melt_per[i] * ferric_per_fin[i] + m_sol * fe3_frac_solid) / \
-                  (m_melt_per[i] + m_sol)
-        mixed_ferric_per.append(mix_per)
-
-        mix_bas = (m_melt_bas[i] * ferric_bas_fin[i] + m_sol * fe3_frac_solid) / \
-                  (m_melt_bas[i] + m_sol)
-        mixed_ferric_bas.append(mix_bas)
-
-        # print("\n>>> impactor mass : %.2e kg" % masses[i])
-        # print("*** peridotite ***")
-        # print(">>>     melt mass = %.2e kg" % m_melt_per[i])
-        # print(">>>    solid mass = %.2e kg" % m_sol)
-        # print(">>>   fe3/fe melt = %.5f" % ferric_per_fin[i])
-        # print(">>>  fe3/fe solid = %.5f" % fe3_frac_solid)
-        # print(">>>  fe3/fe mixed = %.5f" % mix_per)
-        # print("*** basalt ***")
-        # print(">>>     melt mass = %.2e kg" % m_melt_bas[i])
-        # print(">>>    solid mass = %.2e kg" % m_sol)
-        # print(">>>   fe3/fe melt = %.5f" % ferric_bas_fin[i])
-        # print(">>>  fe3/fe solid = %.5f" % fe3_frac_solid)
-        # print(">>>  fe3/fe mixed = %.5f" % mix_bas)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # FIGURE SET-UP
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # scale impactor masses
-    masses = [mass * 1e-22 for mass in masses]
-
-    # mass ticks
-    xticks = [2e21, 5e21, 1e22, 2e22]
-    xticks = [X * 1e-22 for X in xticks]
-
-    fig = plt.figure(figsize=(7., 3.5), dpi=local_dpi)
-    plt.subplots_adjust(left=0.11, right=0.89, bottom=0.15, top=0.9, wspace=0.2)
+    # SET UP FIGURE
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    fig = plt.figure(figsize=(6.5, 3.), dpi=local_dpi)
+    plt.subplots_adjust(left=0.1, right=0.92, top=0.93, bottom=0.25,
+                        wspace=0)
     plt.rcParams.update({'font.size': 10})
     plot_params = {
         'axes.facecolor': '1.',
@@ -225,8 +265,7 @@ def plot_figure_7():
         'patch.edgecolor': 'w',
         'image.cmap': 'rocket',
         'font.family': ['sans-serif'],
-        'font.sans-serif': ['Arial', 'DejaVu Sans',
-                            'Liberation Sans',
+        'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans',
                             'Bitstream Vera Sans', 'sans-serif'],
         'patch.force_edgecolor': True,
         'xtick.bottom': True,
@@ -238,216 +277,249 @@ def plot_figure_7():
         'axes.spines.right': True,
         'axes.spines.top': True}
 
+    grid = gs.GridSpec(1, 2, width_ratios=[2, 1])
+
     with sns.axes_style(plot_params):
-        ax0 = fig.add_subplot(121)  # basalt
-        ax1 = fig.add_subplot(122)  # peridotite
+        ax0 = plt.subplot(grid[0])
+        ax0.minorticks_on()
+        ax0.set_title('Impact Processing', fontsize=7)
 
-    for ax in [ax0, ax1]:
-        ax.set_xlim([0.17, 3.2])
-        ax.set_xscale('log')
-        ax.set_xticks(xticks)
-        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-        ax.tick_params(axis='both', which='both', direction='in')
+        ax1 = plt.subplot(grid[1])
+        ax1.minorticks_on()
+        ax1.set_title('Melt-Atmosphere Equilibration', fontsize=7)
 
-    # X-AXIS : impactor mass --- --- --- --- --- --- --- --- --- --- --- --- ---
-    ax0.set_xlabel('Impactor Mass /10$^{22}$ kg', fontsize=12)
+    x_vals = np.arange(6)
+    ax0.set_xticks(x_vals)
+    ax0.set_xticklabels(
+        ['initial \nconditions', 'atmospheric \nerosion', 'mantle volatiles',
+         'ocean \nvaporisation', 'iron interaction',
+         'thermochemical \nequilibrium'],
+        rotation=45., ha='right', fontsize=7)
+    ax0.set_xlim([-0.5, 5.5])
 
-    ax1.set_xlabel('Impactor Mass /10$^{22}$ kg', fontsize=12)
+    ax0.set_ylabel('Partial Pressures /bar')
 
-    # Y-AXIS PERIDOTITE --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    ax0.set_ylabel('Fe$^{3+}$ / $\Sigma$ Fe', fontsize=12)
-    ax0.set_yticks(iron_ratios_per)
-    ax0.set_yticklabels(["%.3f" % val for val in iron_ratios_per])
-    ax0.set_ylim([0., fe_max])
-    ax0.tick_params(axis='y', which='both', left=True, right=False,
-                    labelleft=True, labelright=False)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # SET UP PROCESSING
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # range of impact masses [kg]
+    impactor_masses = np.logspace(np.log10(2e21), np.log10(2.7e22), 30,
+                                  base=10., endpoint=True)
 
-    ax00 = ax0.twinx()
-    ax00.text(x=list(ax0.get_xlim())[1], y=1.01 * list(ax0.get_ylim())[1],
-              s=" $\Delta$FMQ", color=cols['H2'])
+    # find which impactor mass is closest to 2e22 kg
+    m_imp = impactor_masses[(np.abs(impactor_masses - 2e22)).argmin()]
 
-    ax00.set_ylim(ax0.get_ylim())
-    ax00.set_yticks(ax0.get_yticks())
-    yticklabels = ["%.2f" % val for val in fo2_vals_per]
-    ax00.set_yticklabels(yticklabels, color=cols['H2'])
+    # empties for initial conditions calculations
+    # (i)   initial values,
+    # (ii)  after atmospheric erosion,
+    # (iii) after addition of mantle volatiles,
+    # (iv)  after ocean vaporisation,
+    # (v)   after iron interaction,
+    # (vi)  after thermochemical equilibrium
+    h2, h2o, co2, n2 = np.zeros(6), np.zeros(6), np.zeros(6), np.zeros(6)
+    co, ch4, nh3, p_tot = np.zeros(6), np.zeros(6), np.zeros(6), np.zeros(6)
 
-    ax0.set_title('Peridotite')
+    # file name
+    var_string = "%.2e" % m_imp
+    var_string = var_string.replace('.', '_')
+    var_string = var_string.replace('+', '')
 
-    ax0.axhline(y=0.05, color='k', linestyle=':')
-    ax0.plot(masses, ferric_per_fin, color=cols['H2'], linestyle='--')
-    ax0.plot(masses, mixed_ferric_per, color='k', linestyle='-')
+    s_id = 'test_figure_' + var_string
 
-    # Y-AXIS BASALT --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    ax1.set_ylim(ax0.get_ylim())
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # INITIAL CONDITIONS
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    temp = 1500.  # temperature of atmosphere [K]
+
+    theta = 45.  # impact angle [degrees]
+
+    imp_comp = 'E'  # impactor composition
+
+    impactor_diam = eq_melt.impactor_diameter(m_imp, imp_comp)  # [km]
+
+    v_esc = eq_melt.escape_velocity(gC.m_earth, m_imp, gC.r_earth,
+                                    0.5 * impactor_diam * 1e3)  # [km s-1]
+    v_imp = 2. * v_esc  # [km s-1]
+
+    N_oceans = 1.85  # [EO]
+    pCO2 = 100  # [bars]
+    pN2 = 2.  # [bars]
+    init_atmos = {'CO2': pCO2, 'N2': pN2}
+
+    # water content of the magma [wt%]
+    H2O_init = 0.05
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # ATMOSPHERE THROUGHOUT ATMOSPHERIC PROCESSING
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # iron distribution
+    [X_fe_atm, _, _] = eq_melt.available_iron(m_imp, v_imp, theta, 'E')
+
+    [_, _, P_LIST, _] = atmos_init_adap(m_imp, v_imp, N_oceans,
+                                        dcop(init_atmos), temp, X_fe_atm,
+                                        sys_id=s_id, imp_comp='E')
+    # sort output
+    for i in range(len(P_LIST)):
+        p_tot[i] = np.sum(list(P_LIST[i].values())) * 1e-5  # [bar]
+
+        for mol in list(P_LIST[i].keys()):
+            if mol == 'H2':
+                h2[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'H2O':
+                h2o[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'CO2':
+                co2[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'N2':
+                n2[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'CO':
+                co[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'CH4':
+                ch4[i] = P_LIST[i][mol] * 1e-5
+            elif mol == 'H3N':
+                nh3[i] = P_LIST[i][mol] * 1e-5
+
+    # change zeros to nans
+    h2 = zero_to_nan(h2)
+    h2o = zero_to_nan(h2o)
+    co2 = zero_to_nan(co2)
+    n2 = zero_to_nan(n2)
+    co = zero_to_nan(co)
+    ch4 = zero_to_nan(ch4)
+    nh3 = zero_to_nan(nh3)
+
+    # plotting
+    ax0.plot(x_vals, h2, color=cols['H2'], label='H$_2$',
+             linestyle='', marker='o')
+    ax0.plot(x_vals, h2o, color=cols['H2O'], label='H$_2$O',
+             linestyle='', marker='o')
+    ax0.plot(x_vals[:-1], co2[:-1], color=cols['CO2'], label='CO$_2$',
+             linestyle='', marker='o')
+    ax0.plot(x_vals[:-1], n2[:-1], color=cols['N2'], label='N$_2$',
+             linestyle='', marker='o')
+
+    ax0.plot(x_vals[-1] - 0.05, co2[-1], color=cols['CO2'],
+             linestyle='', marker='o', ms=3)
+    ax0.plot(x_vals, co, color=cols['CO'], label='CO',
+             linestyle='', marker='o', ms=3)
+    ax0.plot(x_vals-0.05, ch4, color=cols['CH4'], label='CH$_4$',
+             linestyle='', marker='o', ms=3)
+    ax0.plot(x_vals[-1], n2[-1], color=cols['N2'], label='N$_2$',
+             linestyle='', marker='o', ms=3)
+    ax0.plot(x_vals+0.05, nh3, color=cols['NH3'], label='NH$_3$',
+             linestyle='', marker='o', ms=3)
+
+    ax0.plot(x_vals, p_tot, color='grey', label='Total \nPressure')
+
+    ax0.legend(loc='upper left', fontsize=6)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # MELT-ATMOSPHERE INTERACTIONS
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    comp_per = gC.klb  # peridotite composition of the silicate melt [wt%]
+    iron_ratio = 0.05  # Fe^3+ / Σ Fe in the impact-generated melt phase
+
+    # # equilibrate magma with atmosphere
+    # [trackers, _, _] = eq_melt.eq_melt_peridotite(
+    #     m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, comp_per, H2O_init,
+    #     iron_ratio, temp, '3A', partition=True, chem=False, tol=1e-5, sys_id=s_id)
+
+    [trackers, _, _] = eq_melt.eq_melt_basalt(
+        m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, gC.basalt,
+        H2O_init, 'FMQ', 0.0, temp, '3A',  partition=True, chem=False,
+        tol=1e-5, sys_id=s_id)
+
+    h2_ma, h2o_ma, co2_ma = trackers[0], trackers[1], trackers[2]
+    n2_ma, co_ma, ch4_ma = trackers[3], trackers[4], trackers[5]
+    nh3_ma, n_tot_ma, p_tot_ma = trackers[6], trackers[16], trackers[7]
+
+    for j in range(len(h2_ma)):
+        h2_ma[j] = 1e-5 * p_tot_ma[j] * h2_ma[j] / n_tot_ma[j]
+        h2o_ma[j] = 1e-5 * p_tot_ma[j] * h2o_ma[j] / n_tot_ma[j]
+        co2_ma[j] = 1e-5 * p_tot_ma[j] * co2_ma[j] / n_tot_ma[j]
+        n2_ma[j] = 1e-5 * p_tot_ma[j] * n2_ma[j] / n_tot_ma[j]
+        co_ma[j] = 1e-5 * p_tot_ma[j] * co_ma[j] / n_tot_ma[j]
+        ch4_ma[j] = 1e-5 * p_tot_ma[j] * ch4_ma[j] / n_tot_ma[j]
+        nh3_ma[j] = 1e-5 * p_tot_ma[j] * nh3_ma[j] / n_tot_ma[j]
+
+        p_tot_ma[j] = 1e-5 * p_tot_ma[j]
+
+    limit = 3  # how many steps to show?
+    ax1.plot(np.arange(limit), h2_ma[1:limit+1], color=cols['H2'],
+             linestyle='', marker='s')
+    ax1.plot(np.arange(limit), h2o_ma[1:limit+1], color=cols['H2O'],
+             linestyle='', marker='s')
+
+    # partial pressures
+    ax1.plot(np.arange(limit)-0.025, co2_ma[1:limit + 1], color=cols['CO2'],
+             linestyle='', marker='s', markersize=3)
+    ax1.plot(np.arange(limit)+0.025, co_ma[1:limit + 1], color=cols['CO'],
+             linestyle='', marker='s', markersize=3)
+    ax1.plot(np.arange(limit)-0.05, ch4_ma[1:limit + 1], color=cols['CH4'],
+             linestyle='', marker='s', markersize=3)
+    ax1.plot(np.arange(limit)+0.05, nh3_ma[1:limit + 1], color=cols['NH3'],
+             linestyle='', marker='s', markersize=3)
+    ax1.plot(np.arange(limit), n2_ma[1:limit + 1], color=cols['N2'],
+             linestyle='', marker='s', markersize=3)
+
+    # total atmospheric pressure
+    ax1.plot(np.arange(limit), p_tot_ma[1:limit+1], color='grey')
+
+    x_labels = ['Step 1 \n(chemical)', 'Step 1 \n(partitioning)',
+                'Step 2 \n(chemical)', 'Step 2 \n(partitioning)']
+    ax1.set_xticks(np.arange(limit))
+    ax1.set_xlim([-0.5, limit + 0.5])
+    ax1.set_xticklabels(x_labels[:limit], rotation=315, ha='center', fontsize=7)
+
     ax1.set_yticks(ax0.get_yticks())
-    # yticklabels = ["%.1f" % val for val in fo2_vals_bas]
-    yticklabels = ["" % val for val in fo2_vals_bas]
-    ax1.set_yticklabels(yticklabels)
+    ax1.set_ylim(ax0.get_ylim())
+    ax1.tick_params(axis='y', which='both', left=True, right=True,
+                    labelleft=False, labelright=True)
 
-    ax11 = ax1.twinx()
-    ax11.set_ylabel('Fe$^{3+}$ / $\Sigma$ Fe', fontsize=12)
-    ax11.set_ylim(ax0.get_ylim())
-    ax11.set_yticks(ax0.get_yticks())
-    ax11.set_yticklabels(["%.3f" % val for val in iron_ratios_bas])
-    ax11.tick_params(axis='y', which='both', left=False, right=True,
-                     labelleft=False, labelright=True)
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # CONNECTION PATCHES
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # equilibration dots
+    dots = np.arange(limit-0.5, limit+0.5, 0.25)
+    ax1.plot(dots, np.ones(len(dots)) * h2_ma[limit - 1], color=cols['H2'],
+             linestyle='', marker='o', markersize=2)
+    ax1.text(x=dots[-1] + 0.05, y=1.2 * h2_ma[limit - 1],
+             s='repeat to\nequilibrium', color=cols['H2'], fontsize=6,
+             ha='right', va='bottom')
 
-    ax1.set_title('Basalt')
+    p_xy = (x_vals[-1], p_tot[-1])
+    p_ma_xy = (0, p_tot_ma[1])
+    con = ConnectionPatch(xyA=p_xy, xyB=p_ma_xy,
+                          coordsA="data", coordsB="data",
+                          axesA=ax0, axesB=ax1, color="grey", linewidth=1.5)
+    fig.add_artist(con)
+    ax1.text(x=0.25, y=460, s='H$_2$O partitioning', fontsize=6, color='grey',
+             ha='left', va='top', rotation=295)
 
-    ax11.axhline(y=0.05, color='k', linestyle=':')
-    ax11.plot(masses, ferric_bas_fin, color=cols['H2'], linestyle='--')
-    ax11.plot(masses, mixed_ferric_bas, color='k', linestyle='-')
+    h2_xy = (x_vals[-1] + 0.1, 120)
+    h2_ma_xy = (-0.2, 270)
+    con = ConnectionPatch(xyA=h2_xy, xyB=h2_ma_xy,
+                          coordsA="data", coordsB="data", arrowstyle='->',
+                          axesA=ax0, axesB=ax1, color=cols['H2'])
+    fig.add_artist(con)
+    ax0.text(x=5.38, y=200, s='redox chemistry', fontsize=6, ha='right',
+             color=cols['H2'])
 
-    # --- --- --- --- --- ---
-    # LABELS
-    # --- --- --- --- --- ---
-    ax0.text(masses[0], ferric_per_fin[0], s='(3A)', color=cols['H2'],
-             va='bottom', ha='left')
-    ax0.text(masses[0], 0.93 * mixed_ferric_per[0], s='(3A)', color=cols['CO2'],
-             va='top', ha='left')
-
-    ax11.text(masses[0], ferric_bas_fin[0], s='(3A)', color=cols['H2'],
-             va='bottom', ha='left')
-    ax11.text(masses[0], 0.93 * mixed_ferric_bas[0], s='(3A)', color=cols['CO2'],
-             va='top', ha='left')
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # IMPORT DATA FROM MODELS 3B
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # impactor masses
-    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10.,
-                         endpoint=True)
-
-    # --- --- --- --- --- ---
-    # BASALT
-    # --- --- --- --- --- ---
-    ferric_bas_init, ferric_bas_fin = [], []
-    fo2_bas_init, fo2_bas_fin = [], []
-    m_melt_bas = []
-    for item in masses:
-        # file name
-        var_str = "%.2e" % item
-        var_str = var_str.replace('.', '_')
-        var_str = var_str.replace('+', '')
-        dir_mass = dir_path + '/output/m_imps/'
-        file = dir_mass + 'basalt_3B_' + var_str
-
-        # read data
-        with h5py.File(file + '.hdf5', 'r') as f:
-            temp = f['temp'][()]
-            p_tot = np.array(list(f['atmos/p_tot']))[-1]
-
-            fe_3 = np.array(list(f['melt/fe2o3']))
-            fe_2 = np.array(list(f['melt/feo']))
-            fe_0 = np.array(list(f['metal/fe']))
-            ferric_bas_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_bas_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
-
-            fo2_melt = np.array(list(f['melt/fo2']))
-            fo2_bas_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
-            fo2_bas_fin.append(fo2_melt[-1] - eq_melt.fo2_fmq(temp, p_tot))
-
-            m_melt_bas.append(list(f['melt/mass'])[-1])
-
-    # --- --- --- --- --- ---
-    # PERIDOTITE
-    # --- --- --- --- --- ---
-    ferric_per_init, ferric_per_fin = [], []
-    fo2_per_init, fo2_per_fin = [], []
-    m_melt_per = []
-    for item in masses:
-        # file name
-        var_str = "%.2e" % item
-        var_str = var_str.replace('.', '_')
-        var_str = var_str.replace('+', '')
-        dir_mass = dir_path + '/output/m_imps/'
-        file = dir_mass + 'peridotite_3B_' + var_str
-
-        # read data
-        with h5py.File(file + '.hdf5', 'r') as f:
-            temp = f['temp'][()]
-            p_tot = np.array(list(f['atmos/p_tot']))[-1]
-
-            fe_3 = np.array(list(f['melt/fe2o3']))
-            fe_2 = np.array(list(f['melt/feo']))
-            fe_0 = np.array(list(f['metal/fe']))
-            ferric_per_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_per_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
-
-            fo2_melt = np.array(list(f['melt/fo2']))
-            fo2_per_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
-            fo2_per_fin.append(fo2_melt[-1] - eq_melt.fo2_fmq(temp, p_tot))
-
-            m_melt_per.append(list(f['melt/mass'])[-1])
-
-    # --- --- --- --- --- ---
-    # REMIXING OF IMPACT-GENERATED MELT PHASES WITH BSE UNMELTED MANTLE
-    # --- --- --- --- --- ---
-    mixed_ferric_per, mixed_ferric_bas = [], []
-    for i in range(len(masses)):
-        # mass of the magma [kg]
-        m_mag = eq_melt.impact_melt_mass(masses[i], v_imp, theta)
-
-        # mass of unmelted mantle [kg]
-        m_whole_mantle = (1. - 0.3201) * gC.m_earth
-        m_sol = m_whole_mantle - m_mag
-
-        # molar composition of solid mantle
-        n_solid = \
-            eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
-
-        # ferric-to-iron ratio of solid mantle
-        fe3_frac_solid = 2. * n_solid['Fe2O3'] / \
-                         (2. * n_solid['Fe2O3'] + n_solid['FeO'])
-
-        # mix together using mass fractions --- --- --- --- --- --- --- --- --- ---
-        mix_per = (m_melt_per[i] * ferric_per_fin[i] + m_sol * fe3_frac_solid) / \
-                  (m_melt_per[i] + m_sol)
-        mixed_ferric_per.append(mix_per)
-
-        mix_bas = (m_melt_bas[i] * ferric_bas_fin[i] + m_sol * fe3_frac_solid) / \
-                  (m_melt_bas[i] + m_sol)
-        mixed_ferric_bas.append(mix_bas)
-
-    # scale impactor masses
-    masses = [mass * 1e-22 for mass in masses]
-
-    ax0.plot(masses, ferric_per_fin, color=cols['H2'], linestyle='--')
-    ax0.plot(masses, mixed_ferric_per, color='k', linestyle='-')
-
-    ax11.plot(masses, ferric_bas_fin, color=cols['H2'], linestyle='--')
-    ax11.plot(masses, mixed_ferric_bas, color='k', linestyle='-')
-
-    # --- --- --- --- --- ---
-    # LABELS
-    # --- --- --- --- --- ---
-    ax0.text(masses[0], ferric_per_fin[0], s='(3B)', color=cols['H2'],
-             va='bottom', ha='left')
-    ax0.text(masses[-1], 1.09 * mixed_ferric_per[-1], s='(3B)', color=cols['CO2'],
-             va='bottom', ha='right')
-
-    ax11.text(masses[0], ferric_bas_fin[0], s='(3B)', color=cols['H2'],
-             va='bottom', ha='left')
-    ax11.text(masses[-1], 1.03 * mixed_ferric_bas[-1], s='(3B)', color=cols['CO2'],
-             va='bottom', ha='right')
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # LEGEND
-    # --- --- --- --- --- ---
-    handles = []
-    handles.append(lines.Line2D([0.], [0.], label='unmelted mantle',
-                                color='k', linestyle=':', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.],
-                                label='melt after atmosphere equilibration',
-                                color=cols['H2'], linestyle='--', linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='bulk mantle',
-                                color='k', linestyle='-', linewidth=2))
-    ax0.legend(handles=handles, loc='upper right', fontsize=8)
+    # h2o_xy = (x_vals[-1], h2o[-1])
+    # h2o_ma_xy = (0, h2o_ma[1])
+    # con = ConnectionPatch(xyA=h2o_xy, xyB=h2o_ma_xy,
+    #                       coordsA="data", coordsB="data",
+    #                       axesA=ax0, axesB=ax1, color=cols['H2O'])
+    # fig.add_artist(con)
 
     plt.savefig(dir_path + '/figures/figure_7.pdf', dpi=200)
     # plt.show()

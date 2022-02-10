@@ -21,7 +21,7 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # should calculations be carried out?
 # [model outputs are saved automatically as h5py files]
-model_run = True
+model_run = False
 
 # which model version is running?
 # model_version = '1A'
@@ -40,12 +40,17 @@ peridotite = True
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # figure booleans correspond to figures from paper.
-figure_2 = False
-figure_3 = False
 figure_4 = False
 figure_5 = False
 figure_6 = False
 figure_7 = False
+figure_8 = True
+figure_9 = False
+
+# special figures
+# reduced_atmospheres.figure_files.figure_test_values.plot_test()
+# reduced_atmospheres.compare
+# sys.exit()
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -72,7 +77,7 @@ co2_vals = np.arange(10, 210, 10)
 mantle_H2O = np.arange(0., 0.2, 0.01)
 
 # system temperature
-temps = np.linspace(1000, 2500, 10, endpoint=True)
+temps = np.linspace(700, 1700, 20, endpoint=True)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -103,15 +108,15 @@ if (basalt and peridotite) or (not basalt and not peridotite):
     sys.exit()
 
 if model_run:
-    # EXAMPLE OF CHANGING VARIABLE OTHER THAN IMPACTOR MASS
-    # for vaporised_oceans in waters:
+    # # EXAMPLE OF CHANGING VARIABLE OTHER THAN IMPACTOR MASS
+    # for temp in temps:
     #     # file name --- --- --- --- ---
-    #     var_string = "%.2f" % vaporised_oceans
-    # var_string = var_string.replace('.', '_')
-    # var_string = var_string.replace('+', '')
+    #     var_string = "%.0d" % temp
+    #     var_string = var_string.replace('.', '_')
+    #     var_string = var_string.replace('+', '')
     #
-    # folder = 'waters'
-    #
+    #     folder = 'temps'
+
     for m_imp in m_imps:
         # file name --- --- --- --- ---
         var_string = "%.2e" % m_imp
@@ -210,33 +215,33 @@ if model_run:
 # PLOT FIGURES
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-if figure_2:
-    # melt mass plot
-    reduced_atmospheres.figure_files.figure_2.plot_figure_2()
-    print(">>> Figure 2 generated.")
-
-if figure_3:
-    # iron distribution plot
-    reduced_atmospheres.figure_files.figure_3.plot_figure_3()
-    print(">>> Figure 3 generated.")
-
 if figure_4:
-    # post-impact system plot
+    # melt mass plot
     reduced_atmospheres.figure_files.figure_4.plot_figure_4()
-    # reduced_atmospheres.figure_files.figure_4_B.plot_figure_4()
     print(">>> Figure 4 generated.")
 
 if figure_5:
-    # figure walking through the standard values impact scenario
+    # iron distribution plot
     reduced_atmospheres.figure_files.figure_5.plot_figure_5()
     print(">>> Figure 5 generated.")
 
 if figure_6:
-    # five models comparison plot
+    # post-impact system plot
     reduced_atmospheres.figure_files.figure_6.plot_figure_6()
+    reduced_atmospheres.figure_files.figure_6_B.plot_figure_6B()
     print(">>> Figure 6 generated.")
 
 if figure_7:
-    # melt-bulk mantle redox comparison plot
+    # figure walking through the standard values impact scenario
     reduced_atmospheres.figure_files.figure_7.plot_figure_7()
     print(">>> Figure 7 generated.")
+
+if figure_8:
+    # five models comparison plot
+    reduced_atmospheres.figure_files.figure_8.plot_figure_8()
+    print(">>> Figure 8 generated.")
+
+if figure_9:
+    # melt-bulk mantle redox comparison plot
+    reduced_atmospheres.figure_files.figure_9.plot_figure_9()
+    print(">>> Figure 9 generated.")

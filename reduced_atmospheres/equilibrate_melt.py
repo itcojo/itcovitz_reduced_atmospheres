@@ -895,6 +895,9 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         Values (float) partial pressure of each species [bar].
     temp : float [K]
         Temperature of the atmosphere before impact.
+    fe_frac : float
+        Fraction of the impactor's iron inventory which is available to
+        reduce the vaporised steam oceans.
     sys_id : str
         Label of the atmosphere-magma system ('system_id'), used as file names
     imp_comp : str
@@ -1010,12 +1013,46 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         print('\n>>> Mass fraction of atmosphere removed : %.3f' % X_ejec)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # impactor vaporisation of volatiles
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    h2o_degas = vaporisation(mass_imp, imp_comp)
+
+    if 'H2O' in list(n_atmos.keys()):
+        n_atmos['H2O'] += h2o_degas
+    else:
+        n_atmos['H2O'] = h2o_degas
+
+    # recalculate pressures
+    [p_atmos, _] = update_pressures(n_atmos)
+
+    p_degas, n_degas = dcop(p_atmos), dcop(n_atmos)
+
+    if display:
+        print('\n>>> Impactor Type : ' + imp_comp)
+        print('>>> %.20s : %.2e\n' % ('Moles of H2O Added', h2o_degas))
+
+        table_list = []
+        p_tot = np.sum(list(p_atmos.values()))
+        for mol in list(p_atmos.keys()):
+            table_list.append([mol, p_atmos[mol] / p_tot,
+                               p_atmos[mol] * 1e-5, n_atmos[mol]])
+
+        print('\x1b[1;34m*** After Volatiles from Mantles ***\x1b[0m')
+        print(tabulate(table_list, tablefmt='orgtbl',
+                       headers=['Species', 'Mixing Ratio', 'Partial /bar',
+                                'Moles'],
+                       floatfmt=("", ".5f", ".2f", ".2e")))
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # injection of H2O and H2 into the atmosphere (vaporisation and reducing)
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # convert units of Earth Oceans into moles
     EO = 1.37e21  # [kg]
     EO_moles = EO / gC.common_mol_mass['H2O']  # [moles]
     init_h2o = init_ocean * EO_moles  # [moles]
+
+    if display:
+        print("\n>>>Iron fraction available to reduce oceans = %.3f" % fe_frac)
 
     # wt% of impactor mass is iron used to reduce oceans
     # Fe + H2O --> FeO + H2
@@ -1029,16 +1066,18 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     if init_reduce_moles > init_h2o:
         print("More Fe than H2O for impactor mass = %.2e." % mass_imp)
         sys.exit()
-
-        # reduce both H2O and CO2
-        n_atmos['H2'] = init_h2o
-        n_atmos['H2O'] = 0.
-        n_atmos['CO2'] -= (init_reduce_moles - init_h2o)
-        n_atmos['CO'] = (init_reduce_moles - init_h2o)
     else:
-        # add H2O and H2 into the atmosphere
-        n_atmos['H2O'] = init_h2o - init_reduce_moles
-        n_atmos['H2'] = init_reduce_moles
+        # add H2O into the atmosphere
+        if 'H2O' in list(n_atmos.keys()):
+            n_atmos['H2O'] += init_h2o - init_reduce_moles
+        else:
+            n_atmos['H2O'] = init_h2o - init_reduce_moles
+
+        # add H2 into the atmosphere
+        if 'H2' in list(n_atmos.keys()):
+            n_atmos['H2'] += init_reduce_moles
+        else:
+            n_atmos['H2'] = init_reduce_moles
 
     # recalculate pressures
     [p_atmos, _] = update_pressures(n_atmos)
@@ -1052,40 +1091,10 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
             table_list.append([mol, p_atmos[mol] / p_tot,
                                p_atmos[mol] * 1e-5, n_atmos[mol]])
         print('\n')
-        print('\x1b[1;32m*** After Injection ***\x1b[0m')
+        print('\x1b[1;32m*** After Ocean Vaporisation & Iron Reduction ***\x1b[0m')
         print(tabulate(table_list, tablefmt='orgtbl', headers=['Species',
                         'Mixing Ratio', 'Partial /bar', 'Moles'],
                         floatfmt=("", ".5f", ".2f", ".2e")))
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # impactor vaporisation of volatiles
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    n_h2o_og = dcop(n_atmos['H2O'])
-
-    h2o_degas = vaporisation(mass_imp, imp_comp)
-
-    n_atmos['H2O'] += h2o_degas
-
-    # recalculate pressures
-    [p_atmos, _] = update_pressures(n_atmos)
-
-    p_degas, n_degas = dcop(p_atmos), dcop(n_atmos)
-
-    if display:
-        print('\n>>> Impactor Type : ' + imp_comp)
-        print('>>> %.20s : %.2e' % ('Moles of H2O Before', n_h2o_og))
-        print('>>> %.20s : %.2e\n' % ('Moles of H2O Added', h2o_degas))
-
-        table_list = []
-        p_tot = np.sum(list(p_atmos.values()))
-        for mol in list(p_atmos.keys()):
-            table_list.append([mol, p_atmos[mol] / p_tot,
-                               p_atmos[mol] * 1e-5, n_atmos[mol]])
-
-        print('\x1b[1;34m*** After Outgassing ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl',
-                       headers=['Species', 'Mixing Ratio', 'Partial /bar',
-                                'Moles'], floatfmt=("", ".5f", ".2f", ".2e")))
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # FastChem Equilibrium Calculations
@@ -1134,7 +1143,7 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
                                 'Moles', 'Moles (pre)'],
                        floatfmt=("", ".5f", ".2f", ".2e", ".2e")))
         print('\n>>> Total atmospheric pressure : %.2f' %
-              (np.sum(list(p_atmos.values()))))
+              (1e-5 * np.sum(list(p_atmos.values()))))
 
     return p_atmos, n_atmos, [p_init, p_erosion, p_ocean, p_degas, p_chem],\
            [n_init, n_erosion, n_ocean, n_degas, n_chem]
@@ -1558,8 +1567,11 @@ def impact_melt_mass(m_imp, vel_imp, angle):
             # what we count as planetary melt mass
             m_melt = M_MELT + M_SCF - M_SCF_ATM
 
+            # what we count as vapour mass
+            m_vap = M_VAP + M_SCF_ATM
+
             q_s_interp.append(Q_S)
-            mass_interp.append(m_melt)
+            mass_interp.append(m_melt + m_vap)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # REGRESSION LINES
@@ -2197,7 +2209,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
     print("*** BASALT ***")
 
     # display values in command line as code proceeds?
-    display = False
+    display = True
 
     # check for valid model version
     if model_version not in ['1A', '1B', '2', '3A', '3B']:
@@ -2704,8 +2716,8 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     a_KC91 = 0.196
 
                     # coefficient linking change in X_FeO to change in X_Fe2O3
-                    epsilon = (x_feo / x_fe2o3) * (1. - 1.828 * x_fe2o3) / \
-                              (1. + 2. * a_KC91 + 1.828 * x_feo)
+                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / \
+                              (1. + 2. * a_KC91 - 1.828 * x_feo)
 
                     # total change in FeO (combined FQM and IW reactions)
                     zeta = (N_melt - Fe2O3 + epsilon * FeO) / \
@@ -3032,8 +3044,8 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     a_KC91 = 0.196
 
                     # coefficient linking change in X_FeO to change in X_Fe2O3
-                    epsilon = (x_feo / x_fe2o3) * (1. - 1.828 * x_fe2o3) / \
-                              (1. + 2. * a_KC91 + 1.828 * x_feo)
+                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / \
+                              (1. + 2. * a_KC91 - 1.828 * x_feo)
 
                     # total change in FeO (combined FQM and IW reactions)
                     zeta = (N_melt - Fe2O3 + epsilon * FeO) / \

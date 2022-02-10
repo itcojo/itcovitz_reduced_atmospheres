@@ -31,7 +31,7 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def plot_figure_4():
+def plot_figure_6B():
     """
     Parameters
     ----------
@@ -295,5 +295,5 @@ def plot_figure_4():
     ax2.set_ylim([6e20, 1.5e23])
     ax2.set_yscale('log')
 
-    plt.savefig(dir_path + '/figures/figure_4_B.pdf', dpi=200)
+    plt.savefig(dir_path + '/figures/figure_6B.pdf', dpi=200)
     # plt.show()

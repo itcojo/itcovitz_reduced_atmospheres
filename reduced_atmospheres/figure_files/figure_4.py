@@ -1,14 +1,10 @@
+from copy import deepcopy as dcop
 import csv
-import sys
-
-import h5py
-import matplotlib
-import matplotlib.gridspec as gridspec
 import matplotlib.lines as lines
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import seaborn as sns
+import sys
 
 import reduced_atmospheres
 import reduced_atmospheres.equilibrate_melt as eq_melt
@@ -29,108 +25,40 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
         'fO2_M': 'k'}
 
 
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_4():
     """
-    Parameters
-    ----------
-
-    Returns
-    -------
+    Plots impact-generated melt mass as a function of either impact energy,
+    impactor mass, or modified specific energy of impact (Stewart+, 2015).
 
     """
-    # range of impact masses [kg]
-    impactor_masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30,
-                                  base=10., endpoint=True)
-
-    # calculate post-impact atmospheres
-    h2, h2o, co2, n2, co, ch4, pressures = [], [], [], [], [], [], []
-    h2_i, h2o_i, co2_i, n2_i, pressures_i = [], [], [], [], []
-    fo2_atmos, fo2_bas, fo2_per, fe_bas, fe_per = [], [], [], [], []
-
-    # successfully converged impactor masses
-    masses_per, masses_bas = [], []
-
-    # convert from moles to column density
-    fac = 1e-4 / (4. * np.pi * gC.r_earth ** 2.)
-
-    for m_imp in impactor_masses:
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-        # File Name
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-        var_string = "%.2e" % m_imp
-        var_string = var_string.replace('.', '_')
-        var_string = var_string.replace('+', '')
-
-        # read data - peridotite
-        file = dir_path + '/output/m_imps/peridotite_3A_'
-        with h5py.File(file + var_string + '.hdf5', 'r') as f:
-            temp = f['temp'][()]
-
-            h2.append(np.array(list(f['atmos/h2']))[0] * fac)
-            h2o.append(np.array(list(f['atmos/h2o']))[0] * fac)
-            co2.append(np.array(list(f['atmos/co2']))[0] * fac)
-            n2.append(np.array(list(f['atmos/n2']))[0] * fac)
-            co.append(np.array(list(f['atmos/co']))[0] * fac)
-            ch4.append(np.array(list(f['atmos/ch4']))[0] * fac)
-            pressures.append(np.array(list(f['atmos/p_tot']))[0])
-
-            h2o_i.append(np.array(list(f['initial/values']))[0] * fac)
-            h2_i.append(np.array(list(f['initial/values']))[1] * fac)
-            n2_i.append(np.array(list(f['initial/values']))[2] * fac)
-            co2_i.append(np.array(list(f['initial/values']))[3] * fac)
-            pressures_i.append(f['initial/pressure'][()])
-
-            fo2_atmos.append(np.array(list(f['atmos/fo2']))[0])
-            fo2_per.append(np.array(list(f['melt/fo2']))[0])
-            fe_per.append(np.array(list(f['metal/fe']))[0])
-            masses_per.append(m_imp)
-
-        # read data - basalt
-        file = dir_path + '/output/m_imps/basalt_3A_'
-        with h5py.File(file + var_string + '.hdf5', 'r') as f:
-            fo2_bas.append(np.array(list(f['melt/fo2']))[0])
-            fe_bas.append(np.array(list(f['metal/fe']))[0])
-            masses_bas.append(m_imp)
-
-    # partial pressures
-    p_h2, p_h2o, p_co2, p_n2, p_co, p_ch4, p_tot = [], [], [], [], [], [], []
-    p_h2_i, p_h2o_i, p_co2_i, p_n2_i, p_tot_i = [], [], [], [], []
-    for j in range(len(h2)):
-        n_tot = h2[j] + h2o[j] + co2[j] + n2[j] + co[j] + ch4[j]
-        n_tot_i = h2_i[j] + h2o_i[j] + co2_i[j] + n2_i[j]
-
-        p_h2.append(1e-5 * pressures[j] * h2[j] / n_tot)
-        p_h2o.append(1e-5 * pressures[j] * h2o[j] / n_tot)
-        p_co2.append(1e-5 * pressures[j] * co2[j] / n_tot)
-        p_n2.append(1e-5 * pressures[j] * n2[j] / n_tot)
-        p_co.append(1e-5 * pressures[j] * co[j] / n_tot)
-        p_ch4.append(1e-5 * pressures[j] * ch4[j] / n_tot)
-        p_tot.append(1e-5 * pressures[j])
-
-        p_h2_i.append(1e-5 * pressures_i[j] * h2_i[j] / n_tot_i)
-        p_h2o_i.append(1e-5 * pressures_i[j] * h2o_i[j] / n_tot_i)
-        p_co2_i.append(1e-5 * pressures_i[j] * co2_i[j] / n_tot_i)
-        p_n2_i.append(1e-5 * pressures_i[j] * n2_i[j] / n_tot_i)
-        p_tot_i.append(1e-5 * pressures_i[j])
-
-    # FMQ buffer for various P & T
-    fmq_line = np.zeros(len(masses_per))
-    for k in range(len(fmq_line)):
-        fmq_line[k] = eq_melt.fo2_fmq(temp, pressures[k])
-
-    # IW buffer for various P & T
-    iw_line, iw_line_2 = np.zeros(len(masses_per)), np.zeros(len(masses_per))
-    for kk in range(len(iw_line)):
-        iw_line[kk] = eq_melt.fo2_iw(temp, pressures[kk])
-        iw_line_2[kk] = eq_melt.fo2_iw(temp, pressures[kk]) - 2.
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # STANDARD VALUES IMPACTOR
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # mass [kg]
+    m_imp_stan = 2e22
+    # radius [m]
+    r_imp_stan = 0.5 * 1e3 * eq_melt.impactor_diameter(m_imp_stan, 'E')
+    # escape velocity [km s-1]
+    v_esc_stan = eq_melt.escape_velocity(gC.m_earth, m_imp_stan, gC.r_earth, r_imp_stan)
+    # escape velocity [km s-1]
+    v_imp_stan = 2.0 * v_esc_stan
+    # impact angle
+    theta_stan = 45.
+    # impact energy
+    energy_stan = 0.5 * m_imp_stan * gC.m_earth / (m_imp_stan + gC.m_earth) * \
+                  (1e3 * v_imp_stan) ** 2.
+    # modified specific energy of impact
+    [q_s_stan, _] = eq_melt.specific_energy(gC.m_earth, m_imp_stan, v_imp_stan,
+                                            np.sin(np.pi * theta_stan / 180.))
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # plot
+    # SET UP FIGURE
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    fig = plt.figure(figsize=(6.5, 4.5), dpi=local_dpi)
-    matplotlib.rcParams.update({'font.size': 9})
+    fig = plt.figure(figsize=(7.5, 3.5), dpi=local_dpi)
+    plt.subplots_adjust(left=.08, right=.9, top=.9, bottom=.13, wspace=.05)
+    plt.rcParams.update({'font.size': 10})
     plot_params = {
         'axes.facecolor': '1.',
         'axes.edgecolor': '0.',
@@ -160,187 +88,233 @@ def plot_figure_4():
         'axes.spines.bottom': True,
         'axes.spines.right': True,
         'axes.spines.top': True}
-    margins = 0.05
-
-    gs = gridspec.GridSpec(5, 5)
-    plt.subplots_adjust(top=0.88, left=0.1, right=0.98, bottom=0.1,
-                        hspace=0.04, wspace=1.)
 
     with sns.axes_style(plot_params):
-        ax0 = fig.add_subplot(gs[:3, :3])
-        ax0.minorticks_on()
-        ax0.margins(margins)
-
-        ax1 = fig.add_subplot(gs[3:, :3])
-        ax1.minorticks_on()
-        ax1.margins(margins)
-
-        ax2 = fig.add_subplot(gs[:3, 3:])
-        ax2.minorticks_on()
-        ax2.margins(margins)
-
-        ax3 = fig.add_subplot(gs[3:, 3:])
-        ax3.minorticks_on()
-        ax3.margins(margins)
-
-    # mass limits
-    masses = [mass * 1e-22 for mass in masses_per]
-
-    # mass ticks
-    xticks = [2e21, 5e21, 1e22, 2e22]
-    xticks = [X * 1e-22 for X in xticks]
-
-    for ax in [ax0, ax1, ax2, ax3]:
-        ax.set_xlim([0.17, 3.2])
-        ax.set_xscale('log')
-        ax.set_xticks(xticks)
-        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-        ax.tick_params(axis='both', which='both', direction='in')
-
-    ax0.text(x=3., y=4e4, s='(a)', ha='right', va='top')
-    ax1.text(x=3., y=625, s='(b)', ha='right', va='top')
-    ax2.text(x=0.215, y=-6.9, s='(c)', va='top', ha='center')
-    ax3.text(x=0.215, y=8e22, s='(d)', ha='center')
+        ax0 = fig.add_subplot(131)
+        ax1 = fig.add_subplot(132)
+        ax2 = fig.add_subplot(133)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # standard value impactor mass
-    ax0.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
-    ax0.text(x=2., y=7e1, s='standard', fontsize=7, color='grey',
-             rotation=270)
-
-    ax0.plot(masses, ch4, color=cols['CH4'], marker='o', markersize=3)
-
-    ax0.plot(masses, n2_i, color=cols['N2'], linestyle='', marker='x', markersize=3)
-    ax0.plot(masses, n2, color=cols['N2'], marker='o', markersize=3)
-
-    ax0.plot(masses, co2_i, color=cols['CO2'], linestyle='', marker='x', markersize=3)
-    ax0.plot(masses, co2, color=cols['CO2'], marker='o', markersize=3)
-
-    ax0.plot(masses, co, color=cols['CO'], marker='o', markersize=3)
-
-    ax0.plot(masses, h2o_i, color=cols['H2O'], linestyle='', marker='x', markersize=3)
-    ax0.plot(masses, h2o, color=cols['H2O'], marker='o', markersize=3)
-
-    ax0.plot(masses, h2_i, color=cols['H2'], linestyle='', marker='x', markersize=3)
-    ax0.plot(masses, h2, color=cols['H2'], marker='o', markersize=3)
-
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # MASS-MELT SUBPLOT
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    ax0.set_xlabel('Impactor Mass /kg')
+    ax0.set_xlim([5e21, 2e23])
     ax0.set_xscale('log')
-    ax0.set_xticks(xticks)
-    ax0.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
 
-    ax0.set_ylabel('Column Density /moles cm$^{-2}$')
-    ax0.set_ylim([15., 5e4])
+    ax0.axvline(x=2e22, color='grey', linestyle='--', linewidth=1.)
+
+    ax0.set_ylabel('Melt Mass /kg')
     ax0.set_yscale('log')
+    ax0.set_ylim([9.5e21, 2.5e24])
 
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # ENERGY-MELT SUBPLOT
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    ax1.set_xlabel('Energy of Impact /J')
+    ax1.set_xscale('log')
+    ax1.set_xlim([3e29, 2.5e31])
+
+    # vertical line indicating standard impact energy
+    ax1.axvline(x=energy_stan, color='grey', linestyle='--', linewidth=1.)
+    ax1.text(x=energy_stan, y=1.5e22, s='standard', color='grey',
+             rotation=270, fontsize=8)
+
+    # ax1.text(x=3.5e29, y=2e24, s='Melt Mass /kg', fontsize=9,
+    #          ha='left', va='top', rotation=90)
+    ax1.set_yscale('log')
+    ax1.set_ylim([9.5e21, 2.5e24])
+    ax1.tick_params(axis='y', which='both', left=True, right=True,
+                    labelleft=False, labelright=False)
+
+    # move subplot
+    ax0_pos = dcop(ax0.get_position())
+    ax1_pos = dcop(ax1.get_position())
+    ax1_pos.x0 = ax0_pos.x1
+    ax1_pos.x1 = ax0_pos.x1 + (ax0_pos.x1 - ax0_pos.x0)
+    ax1.set_position(ax1_pos)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # ENERGY-VAPOUR SUBPLOT
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    ax2.set_xlabel('Energy of Impact /J')
+    ax2.set_xscale('log')
+    ax2.set_xlim([3e29, 2.5e31])
+
+    ax2.axvline(x=energy_stan, color='grey', linestyle='--', linewidth=1.)
+
+    ax2.set_ylabel('Vapour Mass /kg')
+    ax2.yaxis.set_label_position("right")
+    ax2.set_yscale('log')
+    ax2.set_ylim([9.5e20, 2.5e23])
+    ax2.tick_params(axis='y', which='both', left=True, right=True,
+                    labelleft=False, labelright=True)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # DATA VALUES
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    m_melt_00, m_melt_30, m_melt_45, m_melt_60 = [], [], [], []
+
+    energy_00, energy_30, energy_45, energy_60 = [], [], [], []
+    mass_00, mass_30, mass_45, mass_60 = [], [], [], []
+    q_s_00, q_s_30, q_s_45, q_s_60 = [], [], [], []
+
+    file = dir_path + '/reduced_atmospheres/data/melt_masses.txt'
+    with open(file, 'r') as csvfile:
+        data = csv.reader(csvfile, delimiter=',')
+        next(data, None)
+        next(data, None)
+        for row in data:
+            if len(row) in [14, 1]:
+                continue
+
+            # target and impactor masses
+            m_t, m_i = float(row[1]), float(row[2])
+            # target and impactor radii
+            r_t = 0.5 * 1e3 * eq_melt.impactor_diameter(m_t, 'E')
+            r_i = 0.5 * 1e3 * eq_melt.impactor_diameter(m_t, 'E')
+            # mutual escape velocity
+            v_esc = eq_melt.escape_velocity(m_t, m_i, r_t, r_i)
+            # impact velocity
+            v_imp = float(row[3]) * v_esc
+            # impact angle
+            theta = float(row[4])
+
+            # energy of impact
+            E_imp = float(row[5])
+
+            # specific energy of impact
+            [Q_S, _] = eq_melt.specific_energy(m_t, m_i, v_imp,
+                                               np.sin(np.pi * theta / 180.))
+            # forsterite reservoir masses
+            M_MELT = float(row[6])
+            M_SCF = float(row[7])
+            M_VAP = float(row[8])
+            M_SCF_ATM = float(row[9])
+            M_ATM = float(row[10])
+            M_DISC = float(row[11])
+
+            # # print phase reservoir masses
+            # print("\nIMPACTOR MASS = %.2e kg" % m_i)
+            # print("     Melt Mass = %.2e kg" % M_MELT)
+            # print("      SCF Mass = %.2e kg" % M_SCF)
+            # print("   Vapour Mass = %.2e kg" % M_VAP)
+            # print("SCF Atmos Mass = %.2e kg" % M_SCF_ATM)
+            # print("     Disc Mass = %.2e kg" % M_DISC)
+
+            # what we count as melt mass
+            # m_melt = (M_MELT + M_SCF - M_SCF_ATM) / gC.m_earth_mantle
+            m_melt = M_MELT + M_SCF - M_SCF_ATM
+
+            # what we count as vapour mass
+            m_vap = M_VAP + M_SCF_ATM
+
+            # print("\nWHAT WE CALL MELT & VAPOUR")
+            # print("  melt mass = %.2e kg" % m_melt)
+            # print("vapour mass = %.2e kg" % m_vap)
+
+            if theta == 0.:
+                col = cols['H2']
+                energy_00.append(E_imp)
+                mass_00.append(m_i)
+                q_s_00.append(Q_S)
+                m_melt_00.append(m_melt + m_vap)
+            elif theta == 30.:
+                col = cols['H2O']
+                energy_30.append(E_imp)
+                mass_30.append(m_i)
+                q_s_30.append(Q_S)
+                m_melt_30.append(m_melt + m_vap)
+            elif theta == 45.:
+                col = cols['CO2']
+                energy_45.append(E_imp)
+                mass_45.append(m_i)
+                q_s_45.append(Q_S)
+                m_melt_45.append(m_melt + m_vap)
+            elif theta == 60.:
+                col = cols['N2']
+                energy_60.append(E_imp)
+                mass_60.append(m_i)
+                q_s_60.append(Q_S)
+                m_melt_60.append(m_melt + m_vap)
+
+            if float(row[3]) == 1.1:
+                mark = '+'
+            elif float(row[3]) == 1.5:
+                mark = 'o'
+            elif float(row[3]) == 2.0:
+                mark = 's'
+
+            # plot melt mass against impactor mass
+            if float(row[3]) != 1.5:
+                ax0.plot(m_i, m_melt, marker=mark, markersize=5, color=col)
+
+            # plot melt mass against impact energy
+            ax1.plot(E_imp, m_melt, marker=mark, markersize=5, color=col)
+
+            # plot vapour mass against impact energy
+            ax2.plot(E_imp, m_vap, marker=mark, markersize=5, color=col)
+
+    # sys.exit()
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # REGRESSION LINES
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    fit_00 = np.polyfit(np.log10(energy_00), np.log10(m_melt_00), 1)
+    fit_30 = np.polyfit(np.log10(energy_30), np.log10(m_melt_30), 1)
+    fit_45 = np.polyfit(np.log10(energy_45), np.log10(m_melt_45), 1)
+    fit_60 = np.polyfit(np.log10(energy_60), np.log10(m_melt_60), 1)
+
+    plot_e_00 = np.logspace(np.log10(min(energy_00)), np.log10(max(energy_00)),
+                             100, endpoint=True, base=10.)
+    plot_e_30 = np.logspace(np.log10(min(energy_30)), np.log10(max(energy_30)),
+                             100, endpoint=True, base=10.)
+    plot_e_45 = np.logspace(np.log10(min(energy_45)), np.log10(max(energy_45)),
+                             100, endpoint=True, base=10.)
+    plot_e_60 = np.logspace(np.log10(min(energy_60)), np.log10(max(energy_60)),
+                             100, endpoint=True, base=10.)
+
+    plot_00, plot_30, plot_45, plot_60 = [], [], [], []
+    for i in range(len(plot_e_00)):
+        plot_00.append(10. ** (fit_00[0] * np.log10(plot_e_00[i]) + fit_00[1]))
+        plot_30.append(10. ** (fit_30[0] * np.log10(plot_e_30[i]) + fit_30[1]))
+        plot_45.append(10. ** (fit_45[0] * np.log10(plot_e_45[i]) + fit_45[1]))
+        plot_60.append(10. ** (fit_60[0] * np.log10(plot_e_60[i]) + fit_60[1]))
+
+    # ax1.plot(plot_e_00, plot_00, color=cols['H2'], linewidth=1.5)
+    # ax1.plot(plot_e_30, plot_30, color=cols['H2O'], linewidth=1.5)
+    ax1.plot(plot_e_45, plot_45, color=cols['CO2'], linewidth=1.5)
+    # ax1.plot(plot_e_60, plot_60, color=cols['N2'], linewidth=1.5)
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # LEGEND
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     handles = []
-    handles.append(lines.Line2D([0.], [0.], label='H$_2$O', color=cols['H2O'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='H$_2$', color=cols['H2'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='CO$_2$', color=cols['CO2'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='N$_2$', color=cols['N2'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='CO', color=cols['CO'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='CH4', color=cols['CH4'],
-                                linewidth=2))
-    handles.append(lines.Line2D([0.], [0.], label='No Chemistry', color='grey',
-                                linestyle='', marker='x', markersize=3))
-    handles.append(lines.Line2D([0.], [0.], label='Atmos LTE', color='grey',
-                                linestyle='-', marker='o'))
-
-    ax0.legend(handles=handles, loc='lower left', ncol=4, fontsize=8,
+    handles.append(lines.Line2D([0.], [0.], label='$0^\circ$',
+                                color=cols['H2'],  linestyle='-', linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='$30^\circ$',
+                                color=cols['H2O'], linestyle='-', linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='$45^\circ$',
+                                color=cols['CO2'], linestyle='-', linewidth=2))
+    handles.append(lines.Line2D([0.], [0.], label='$60^\circ$',
+                                color=cols['N2'], linestyle='-', linewidth=2))
+    ax0.legend(handles=handles, loc='lower left', fontsize=7, ncol=4,
                bbox_to_anchor=(-0.01, 1.01))
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # standard value impactor mass
-    ax1.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
-
-    # ax1.plot(masses, p_ch4, color=cols['CH4'])
-    # ax1.plot(masses, p_n2, color=cols['N2'])
-    ax1.plot(masses, p_co2, color=cols['CO2'], marker='o', markersize=3)
-    # ax1.plot(masses, p_co, color=cols['CO'])
-    ax1.plot(masses, p_h2o, color=cols['H2O'], marker='o', markersize=3)
-    ax1.plot(masses, p_h2, color=cols['H2'], marker='o', markersize=3)
-    ax1.plot(masses, p_tot, color='grey')
-
-    ax1.set_xlabel('Impactor Mass /10$^{22}$kg')
-    ax1.set_xscale('log')
-    ax1.set_xticks(xticks)
-    ax1.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-
-    ax1.set_ylabel('Partial Pressure /bar')
-    ax1.set_ylim([-50., 650.])
-
-    ax1.text(x=1.9, y=610, s='total pressure', fontsize=7, color='grey',
-             rotation=-7, ha='right', va='top')
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # standard value impactor mass
-    ax2.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
-
-    # atmosphere fO2
-    ax2.plot(masses, fo2_atmos, color=cols['NH3'], linewidth=1.1)
-    ax2.text(x=1.75, y=-9.8, s='Atmosphere', color=cols['NH3'],
-             fontsize=7, rotation=-23, ha='right', va='bottom')
-
-    # melt phase fO2
-    ax2.plot(masses, fo2_bas, color=cols['CO2'], linewidth=1.1)
-    ax2.text(x=0.2, y=-13.55, s='Basalt', color=cols['CO2'],
-             fontsize=7, ha='left', va='bottom')
-
-    ax2.plot(masses, fo2_per, color=cols['CO2'], linewidth=1.1)
-    ax2.text(x=0.2, y=-14.2, s='Peridotite', color=cols['CO2'],
-             fontsize=7, ha='left', va='top')
-
-    # FMQ comparison line
-    ax2.plot(masses, fmq_line, color='grey', linestyle=':')
-    ax2.text(x=1.8, y=fmq_line[-1], s='\u0394FMQ=0', color='grey',
-             fontsize=8, ha='right', va='bottom')
-
-    # IW comparison line
-    ax2.plot(masses, iw_line, color='grey', linestyle=':')
-    ax2.text(x=masses[0], y=iw_line[0], s='\u0394IW=0', color='grey',
-             fontsize=8, ha='left', va='bottom')
-
-    # IW-2 comparison line
-    ax2.plot(masses, iw_line_2, color='grey', linestyle=':')
-    ax2.text(x=1.8, y=iw_line_2[0], s='\u0394IW=-2', color='grey',
-             fontsize=8, ha='right', va='bottom')
-
-    ax2.set_xscale('log')
-    ax2.set_xticks(xticks)
-    ax2.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-    ax2.tick_params(axis="x", bottom=True, top=True, labeltop=True,
-                    labelbottom=False)
-
-    ax2.set_ylabel('$\log_{10}$(fO$_2$)')
-    ax2.set_ylim([-14.8, -6.6])
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # standard value impactor mass
-    ax3.axvline(x=2., color='grey', linestyle='--', linewidth=1.3)
-
-    # iron in melt phase
-    idxs = [i for i, e in enumerate(fe_bas) if e != 0]
-    ax3.plot([masses[i] for i in idxs], [fe_bas[i] for i in idxs],
-             color='k', linewidth=1.)
-    ax3.text(x=0.7, y=6e21, s='Basalt', color='k',
-             fontsize=7, rotation=18, ha='left', va='bottom')
-
-    ax3.plot(masses, fe_per, color='k', linewidth=1.)
-    ax3.text(x=0.205, y=1e22, s='Peridotite', color='k',
-             fontsize=7, rotation=18, ha='left', va='bottom')
-
-    ax3.set_xlabel('Impactor Mass /10$^{22}$kg')
-    ax3.set_xscale('log')
-    ax3.set_xticks(xticks)
-    ax3.get_xaxis().set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-
-    ax3.set_ylabel('Fe /moles')
-    ax3.set_ylim([6e20, 1.5e23])
-    ax3.set_yscale('log')
+    handles = []
+    handles.append(lines.Line2D([0.], [0.], label='$1.1\,v_\mathrm{esc}$',
+                                color='k', linestyle='', marker='+'))
+    handles.append(lines.Line2D([0.], [0.], label='$1.5\,v_\mathrm{esc}$',
+                                color='k', linestyle='', marker='o'))
+    handles.append(lines.Line2D([0.], [0.], label='$2.0\,v_\mathrm{esc}$',
+                                color='k', linestyle='', marker='s'))
+    ax2.legend(handles=handles, loc='lower right', fontsize=7, ncol=3,
+               bbox_to_anchor=(1.01, 1.01))
 
     plt.savefig(dir_path + '/figures/figure_4.pdf', dpi=200)
     # plt.show()

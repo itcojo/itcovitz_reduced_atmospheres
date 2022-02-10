@@ -10,12 +10,16 @@ dir_fastchem = '/home/itcojo/FastChem'
 import reduced_atmospheres.constants
 import reduced_atmospheres.equilibrate_melt
 import reduced_atmospheres.figure_files
-import reduced_atmospheres.figure_files.figure_2
-import reduced_atmospheres.figure_files.figure_3
+# import reduced_atmospheres.figure_files.figure_2
 import reduced_atmospheres.figure_files.figure_4
-import reduced_atmospheres.figure_files.figure_4_B
 import reduced_atmospheres.figure_files.figure_5
 import reduced_atmospheres.figure_files.figure_6
+import reduced_atmospheres.figure_files.figure_6_B
 import reduced_atmospheres.figure_files.figure_7
+import reduced_atmospheres.figure_files.figure_8
+import reduced_atmospheres.figure_files.figure_9
 
-
+# special figures
+import reduced_atmospheres.figure_files.figure_algebra_error
+import reduced_atmospheres.figure_files.figure_test_values
+import reduced_atmospheres.figure_files.IPLU_figures

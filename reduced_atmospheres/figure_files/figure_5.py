@@ -1,7 +1,7 @@
 import sys
-from copy import deepcopy as dcop
+
 import matplotlib.gridspec as gs
-from matplotlib.patches import ConnectionPatch
+import matplotlib.lines as lines
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -27,205 +27,10 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
-                    sys_id, imp_comp='E'):
-    """
-    Adapted version of 'atmos_init' from 'equilibrate_melt', specifically made
-    for plotting the figure.
-
-    Parameters
-    ----------
-    mass_imp : float [kg]
-        Mass of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity.
-    init_ocean : float [Earth Oceans]
-        Initial amount of water on the planet receiving impact.
-    p_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [bar].
-    temp : float [K]
-        Temperature of the atmosphere before impact.
-    sys_id : str
-        Label of the atmosphere-magma system ('system_id'), used as file names
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
-
-    Returns
-    -------
-    p_atmos (updated)
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
-    p_list : list
-        Partial pressure dictionaries at each stage of the calculations.
-        [initial, erosion, ocean vaporisation, impactor vaporisation,
-    n_list : list
-        Moles dictionaries at each stage of the calculations.
-
-    """
-    p_init = dcop(p_atmos)  # initial input atmosphere
-    for mol in list(p_init.keys()):
-        p_init[mol] = p_init[mol] * 1e5
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # pre-impact atmosphere
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # convert bars to Pa
-    for mol in list(p_atmos.keys()):
-        p_atmos[mol] = p_atmos[mol] * 1e5
-
-    # total pressure
-    p_tot = np.sum(list(p_atmos.values()))
-
-    # a.x = b matrix equation, where x is a list of molecules' moles
-    mols = list(p_atmos.keys())
-    a = np.zeros((len(mols), len(mols)))
-    for ii in range(len(a[0])):  # columns
-        for i in range(len(a) - 1):  # rows
-            if i == ii:
-                a[i, ii] = (p_tot / p_atmos[mols[i]]) - 1
-            else:
-                a[i, ii] = -1
-        # final row
-        a[-1, ii] = gC.mol_phys_props(mols[ii])[0] * 1e-3 / gC.u
-
-    b = np.zeros(len(mols))
-    b[len(mols) - 1] = 4. * np.pi * gC.r_earth ** 2. * p_tot / gC.g
-
-    solve = np.linalg.solve(a, b)
-
-    # unpack solution into moles dictionary
-    n_atmos = {}
-    for j in range(len(mols)):
-        n_atmos[mols[j]] = solve[j]
-
-    n_init = dcop(n_atmos)  # initial input atmosphere
-
-    # atmosphere mass
-    m_atm = 0.
-    for mol in list(p_atmos.keys()):
-        m_atm += n_atmos[mol] * gC.common_mol_mass[mol]
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # atmospheric erosion by the impact
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # impactor diameter [km]
-    d_imp = eq_melt.impactor_diameter(mass_imp, imp_comp)
-
-    [X_ejec, n_atmos] = eq_melt.atmos_ejection(n_atmos, mass_imp, d_imp,
-                                               vel_imp,  param=0.7)
-
-    # recalculate pressures
-    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
-
-    p_erosion, n_erosion = dcop(p_atmos), dcop(n_atmos)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # injection of H2O into the atmosphere (vaporisation only)
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # convert units of Earth Oceans into moles
-    EO = 1.37e21  # [kg]
-    EO_moles = EO / gC.common_mol_mass['H2O']  # [moles]
-    init_h2o = init_ocean * EO_moles  # [moles]
-
-    # add H2O and H2 into the atmosphere
-    n_atmos['H2O'] = init_h2o
-
-    # recalculate pressures
-    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
-
-    p_ocean, n_ocean = dcop(p_atmos), dcop(n_atmos)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # interaction of the impactor iron with the atmosphere
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # wt% of impactor mass is iron used to reduce oceans
-    # Fe + H2O --> FeO + H2
-    init_reduce_mass = fe_frac * gC.iron_wt[imp_comp] * mass_imp  # [kg]
-    init_reduce_moles = init_reduce_mass / gC.common_mol_mass['Fe']  # [moles]
-
-    if init_reduce_moles > init_h2o + n_atmos['CO2']:
-        print("More Fe than H2O + CO2 for impactor mass = %.2e." % mass_imp)
-        sys.exit()
-    elif init_reduce_moles > init_h2o:
-        print("More Fe than H2O for impactor mass = %.2e." % mass_imp)
-    else:
-        # add H2O and H2 into the atmosphere
-        n_atmos['H2O'] -= init_reduce_moles
-        n_atmos['H2'] = init_reduce_moles
-
-    # recalculate pressures
-    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
-
-    p_iron, n_iron = dcop(p_atmos), dcop(n_atmos)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # impactor vaporisation of volatiles
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    n_h2o_og = dcop(n_atmos['H2O'])
-
-    h2o_degas = eq_melt.vaporisation(mass_imp, imp_comp)
-
-    n_atmos['H2O'] += h2o_degas
-
-    # recalculate pressures
-    [p_atmos, _] = eq_melt.update_pressures(n_atmos)
-
-    p_degas, n_degas = dcop(p_atmos), dcop(n_atmos)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # FastChem Equilibrium Calculations
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --
-    pre_fc = dcop(n_atmos)
-
-    # abundances for FastChem
-    abund = eq_melt.calc_elem_abund(n_atmos)
-
-    # prepare FastChem config files
-    eq_melt.write_fastchem(dir_path + '/reduced_atmospheres/data/FastChem/' +
-                           sys_id, abund, temp,
-                           float(np.sum(list(p_atmos.values()))))
-
-    # run automated FastChem
-    eq_melt.run_fastchem_files(sys_id)
-
-    # read FastChem output
-    [p_atmos, n_atmos] = eq_melt.read_fastchem_output(sys_id)
-
-    p_chem, n_chem = dcop(p_atmos), dcop(n_atmos)
-
-    return p_atmos, n_atmos,\
-           [p_init, p_erosion, p_ocean, p_iron, p_degas, p_chem],\
-           [n_init, n_erosion, n_ocean, n_iron, n_degas, n_chem]
-
-
-def zero_to_nan(array_1d):
-    """
-    Change all zeroes in input array to numpy nans.
-
-    Parameters
-    ----------
-    array_1d : list
-
-    Returns
-    -------
-
-    """
-    for idx in range(len(array_1d)):
-        if array_1d[idx] == 0.:
-            array_1d[idx] = np.nan
-
-    return array_1d
-
-
 def plot_figure_5():
     """
-    Plots partial pressures of species from pre-impact to post-equilibration.
+    Plots the distribution of impactor iron between the target interior,
+    atmosphere, and escaping the system, as a function of impactor mass.
 
     Parameters
     ----------
@@ -234,14 +39,11 @@ def plot_figure_5():
     -------
 
     """
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # SET UP FIGURE
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    fig = plt.figure(figsize=(6.5, 3.), dpi=local_dpi)
-    plt.subplots_adjust(left=0.1, right=0.92, top=0.93, bottom=0.25,
-                        wspace=0)
+    fig = plt.figure(figsize=(6.5, 3.5), dpi=local_dpi)
+    plt.subplots_adjust(left=0.1, right=0.94, top=0.92, bottom=0.15, wspace=0.02)
     plt.rcParams.update({'font.size': 10})
     plot_params = {
         'axes.facecolor': '1.',
@@ -272,240 +74,245 @@ def plot_figure_5():
         'axes.spines.bottom': True,
         'axes.spines.right': True,
         'axes.spines.top': True}
-
-    grid = gs.GridSpec(1, 2, width_ratios=[2, 1])
+    grid = gs.GridSpec(1, 3, width_ratios=[1.25, 2, 1.25])
 
     with sns.axes_style(plot_params):
         ax0 = plt.subplot(grid[0])
         ax0.minorticks_on()
-        ax0.set_title('Impact Processing', fontsize=7)
 
         ax1 = plt.subplot(grid[1])
         ax1.minorticks_on()
-        ax1.set_title('Melt-Atmosphere Equilibration', fontsize=7)
 
-    x_vals = np.arange(6)
-    ax0.set_xticks(x_vals)
-    ax0.set_xticklabels(
-        ['initial \nconditions', 'atmospheric \nerosion',
-         'ocean \nvaporisation', 'iron interaction', 'mantle volatiles',
-         'thermochemical \nequilibrium'],
-        rotation=45., ha='right', fontsize=7)
-    ax0.set_xlim([-0.5, 5.5])
+        ax2 = plt.subplot(grid[2])
+        ax2.minorticks_on()
 
-    ax0.set_ylabel('Partial Pressures /bar')
+    for ax in [ax0, ax1, ax2]:
+        ax.set_xlim([0.2, 4.2])
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # SET UP PROCESSING
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # range of impact masses [kg]
-    impactor_masses = np.logspace(np.log10(2e21), np.log10(2.7e22), 30,
-                                  base=10., endpoint=True)
+        ax.set_ylim([-0.05, 1.05])
 
-    # find which impactor mass is closest to 2e22 kg
-    m_imp = impactor_masses[(np.abs(impactor_masses - 2e22)).argmin()]
+        ax.axvline(x=2.0, color='grey', linestyle='--')
+        ax.axvline(x=2.44, color='grey', linestyle='--')
 
-    # empties for initial conditions calculations
-    # (i)   initial values,
-    # (ii)  after atmospheric erosion,
-    # (iii) after ocean vaporisation,
-    # (iv)  after iron interaction,
-    # (v)   after addition of mantle volatiles,
-    # (vi)  after thermochemical equilibrium
-    h2, h2o, co2, n2 = np.zeros(6), np.zeros(6), np.zeros(6), np.zeros(6)
-    co, ch4, nh3, p_tot = np.zeros(6), np.zeros(6), np.zeros(6), np.zeros(6)
+    # label axes
+    ax1.set_xlabel('Impactor Mass /10$^{22}$ kg')
+    ax0.set_ylabel('Iron Distribution Fraction')
 
-    # file name
-    var_string = "%.2e" % m_imp
-    var_string = var_string.replace('.', '_')
-    var_string = var_string.replace('+', '')
+    # titles
+    ax0.set_title("θ = 30$^\circ$")
+    ax1.set_title("θ = 45$^\circ$")
+    ax2.set_title("θ = 60$^\circ$")
 
-    s_id = 'test_figure_' + var_string
+    # labels on central subplot
+    ax0.text(x=2.0, y=0.82, s='standard', color='grey',
+            fontsize=8, va='top', ha='left', rotation=270)
+    ax0.text(x=2.44, y=0.82, s='maximum HSE', color='grey',
+            fontsize=8, va='top', ha='left', rotation=270)
 
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # INITIAL CONDITIONS
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    temp = 1500.  # temperature of atmosphere [K]
+    ax1.text(x=0.35, y=1.0, s='$v_i = 2.0\,v_\mathrm{esc}$',
+             fontsize=8, va='center')
 
-    theta = 45.  # impact angle [degrees]
-
-    imp_comp = 'E'  # impactor composition
-
-    impactor_diam = eq_melt.impactor_diameter(m_imp, imp_comp)  # [km]
-
-    v_esc = eq_melt.escape_velocity(gC.m_earth, m_imp, gC.r_earth,
-                                    0.5 * impactor_diam * 1e3)  # [km s-1]
-    v_imp = 2. * v_esc  # [km s-1]
-
-    N_oceans = 1.85  # [EO]
-    pCO2 = 100  # [bars]
-    pN2 = 2.  # [bars]
-    init_atmos = {'CO2': pCO2, 'N2': pN2}
-
-    # water content of the magma [wt%]
-    H2O_init = 0.05
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # ATMOSPHERE THROUGHOUT ATMOSPHERIC PROCESSING
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # iron distribution
-    [X_fe_atm, _, _] = eq_melt.available_iron(m_imp, v_imp, theta)
-
-    [_, _, P_LIST, _] = atmos_init_adap(m_imp, v_imp, N_oceans,
-                                        dcop(init_atmos), temp, X_fe_atm,
-                                        sys_id=s_id, imp_comp='E')
-    # sort output
-    for i in range(len(P_LIST)):
-        p_tot[i] = np.sum(list(P_LIST[i].values())) * 1e-5  # [bar]
-
-        for mol in list(P_LIST[i].keys()):
-            if mol == 'H2':
-                h2[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'H2O':
-                h2o[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'CO2':
-                co2[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'N2':
-                n2[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'CO':
-                co[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'CH4':
-                ch4[i] = P_LIST[i][mol] * 1e-5
-            elif mol == 'H3N':
-                nh3[i] = P_LIST[i][mol] * 1e-5
-
-    # change zeros to nans
-    h2 = zero_to_nan(h2)
-    h2o = zero_to_nan(h2o)
-    co2 = zero_to_nan(co2)
-    n2 = zero_to_nan(n2)
-    co = zero_to_nan(co)
-    ch4 = zero_to_nan(ch4)
-    nh3 = zero_to_nan(nh3)
-
-    # plotting
-    ax0.plot(x_vals, h2, color=cols['H2'], label='H$_2$',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, h2o, color=cols['H2O'], label='H$_2$O',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, co2, color=cols['CO2'], label='CO$_2$',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, n2, color=cols['N2'], label='N$_2$',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, co, color=cols['CO'], label='CO',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, ch4, color=cols['CH4'], label='CH$_4$',
-             linestyle='', marker='o')
-    ax0.plot(x_vals, nh3, color=cols['NH3'], label='NH$_3$',
-             linestyle='', marker='o')
-
-    ax0.plot(x_vals, p_tot, color='grey', label='Total \nPressure')
-
-    ax0.legend(loc='upper left', fontsize=6)
-
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # MELT-ATMOSPHERE INTERACTIONS
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    comp_per = gC.klb  # peridotite composition of the silicate melt [wt%]
-    iron_ratio = 0.05  # Fe^3+ / Σ Fe in the impact-generated melt phase
-
-    # equilibrate magma with atmosphere
-    [trackers, _, _] = eq_melt.eq_melt_peridotite(
-        m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, comp_per, H2O_init,
-        iron_ratio, temp, '3A',  partition=True, chem=False, tol=1e-5, sys_id=s_id)
-
-    h2_ma, h2o_ma, co2_ma = trackers[0], trackers[1], trackers[2]
-    n2_ma, co_ma, ch4_ma = trackers[3], trackers[4], trackers[5]
-    nh3_ma, n_tot_ma, p_tot_ma = trackers[6], trackers[16], trackers[7]
-
-    for j in range(len(h2_ma)):
-        h2_ma[j] = 1e-5 * p_tot_ma[j] * h2_ma[j] / n_tot_ma[j]
-        h2o_ma[j] = 1e-5 * p_tot_ma[j] * h2o_ma[j] / n_tot_ma[j]
-        co2_ma[j] = 1e-5 * p_tot_ma[j] * co2_ma[j] / n_tot_ma[j]
-        n2_ma[j] = 1e-5 * p_tot_ma[j] * n2_ma[j] / n_tot_ma[j]
-        co_ma[j] = 1e-5 * p_tot_ma[j] * co_ma[j] / n_tot_ma[j]
-        ch4_ma[j] = 1e-5 * p_tot_ma[j] * ch4_ma[j] / n_tot_ma[j]
-        nh3_ma[j] = 1e-5 * p_tot_ma[j] * nh3_ma[j] / n_tot_ma[j]
-
-        p_tot_ma[j] = 1e-5 * p_tot_ma[j]
-
-    limit = 3  # how many steps to show?
-    ax1.plot(np.arange(limit), h2_ma[1:limit+1], color=cols['H2'],
-             linestyle='', marker='s')
-    ax1.plot(np.arange(limit), h2o_ma[1:limit+1], color=cols['H2O'],
-             linestyle='', marker='s')
-
-    # partial pressures
-    ax1.plot(np.arange(limit)-0.025, co2_ma[1:limit + 1], color=cols['CO2'],
-             linestyle='', marker='s', markersize=3)
-    ax1.plot(np.arange(limit)+0.025, co_ma[1:limit + 1], color=cols['CO'],
-             linestyle='', marker='s', markersize=3)
-    ax1.plot(np.arange(limit)-0.05, ch4_ma[1:limit + 1], color=cols['CH4'],
-             linestyle='', marker='s', markersize=3)
-    ax1.plot(np.arange(limit)+0.05, nh3_ma[1:limit + 1], color=cols['NH3'],
-             linestyle='', marker='s', markersize=3)
-    ax1.plot(np.arange(limit), n2_ma[1:limit + 1], color=cols['N2'],
-             linestyle='', marker='s', markersize=3)
-
-    # total atmospheric pressure
-    ax1.plot(np.arange(limit), p_tot_ma[1:limit+1], color='grey')
-
-    x_labels = ['Step 1 \n(chemical)', 'Step 1 \n(partitioning)',
-                'Step 2 \n(chemical)', 'Step 2 \n(partitioning)']
-    ax1.set_xticks(np.arange(limit))
-    ax1.set_xlim([-0.5, limit + 0.5])
-    ax1.set_xticklabels(x_labels[:limit], rotation=315, ha='center', fontsize=7)
-
-    ax1.set_yticks(ax0.get_yticks())
-    ax1.set_ylim(ax0.get_ylim())
     ax1.tick_params(axis='y', which='both', left=True, right=True,
+                    labelleft=False, labelright=False)
+    ax2.tick_params(axis='y', which='both', left=True, right=True,
                     labelleft=False, labelright=True)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # DATA VALUES
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # CONNECTION PATCHES
+    masses, vels, thetas = [], [], []
+    X_int, X_surf, X_atm, X_disc, X_ejec = [], [], [], [], []
+
+    impact_m_earth = 5.9127e+24
+
+    atm_mark = 'o'
+    int_mark = 's'
+    ejec_mark = 'X'
+
+    file = dir_path + '/reduced_atmospheres/data/iron_distributions.txt'
+    with open(file, 'r') as f:
+        count = -1
+        for line in f:
+            count += 1
+            if count < 2:
+                continue
+            else:
+                row = line.split(",")
+
+                if len(row) == 11:
+                    masses.append(float(row[0]) * impact_m_earth)
+                    vels.append(float(row[1]))
+                    thetas.append(float(row[2]))
+                    X_int.append(float(row[5]) + float(row[6]))
+                    # X_surf.append(float(row[6]))
+                    X_atm.append(float(row[7]))
+                    # X_disc.append(float(row[8]))
+                    X_ejec.append(float(row[8]) + float(row[9]))
+
+    interp_mass_30, interp_int_30, interp_atm_30, interp_ejec_30 = [], [], [], []
+    interp_mass_45, interp_int_45, interp_atm_45, interp_ejec_45 = [], [], [], []
+    interp_mass_60, interp_int_60, interp_atm_60, interp_ejec_60 = [], [], [], []
+    for i in range(len(masses)):
+        if vels[i] == 2.0:
+            # do not plot head-on collisions
+            if thetas[i] == 0:
+                continue
+
+            # simply plot data for 30 or 60 degree impacts
+            elif thetas[i] == 30.:
+                interp_mass_30.append(masses[i] * 1e-22)
+                interp_int_30.append(X_int[i])
+                interp_atm_30.append(X_atm[i])
+                interp_ejec_30.append(X_ejec[i])
+
+                ax0.plot(masses[i] * 1e-22, X_int[i], marker=int_mark,
+                         markersize=4, color=cols['CO2'])
+                ax0.plot(masses[i] * 1e-22, X_atm[i], marker=atm_mark,
+                         markersize=4, color=cols['H2O'])
+                ax0.plot(masses[i] * 1e-22, X_ejec[i], marker=ejec_mark,
+                         markersize=4, color=cols['N2'])
+
+            # carry out interpolation for 45 degree impacts
+            if thetas[i] == 45.:
+                interp_mass_45.append(masses[i] * 1e-22)
+                interp_int_45.append(X_int[i])
+                interp_atm_45.append(X_atm[i])
+                interp_ejec_45.append(X_ejec[i])
+
+                ax1.plot(masses[i] * 1e-22, X_int[i], marker=int_mark,
+                         markersize=4, color=cols['CO2'])
+                ax1.plot(masses[i] * 1e-22, X_atm[i], marker=atm_mark,
+                         markersize=4, color=cols['H2O'])
+                ax1.plot(masses[i] * 1e-22, X_ejec[i], marker=ejec_mark,
+                         markersize=4, color=cols['N2'])
+
+            elif thetas[i] == 60.:
+                interp_mass_60.append(masses[i] * 1e-22)
+                interp_int_60.append(X_int[i])
+                interp_atm_60.append(X_atm[i])
+                interp_ejec_60.append(X_ejec[i])
+
+                ax2.plot(masses[i] * 1e-22, X_int[i], marker=int_mark,
+                         markersize=4, color=cols['CO2'])
+                ax2.plot(masses[i] * 1e-22, X_atm[i], marker=atm_mark,
+                         markersize=4, color=cols['H2O'])
+                ax2.plot(masses[i] * 1e-22, X_ejec[i], marker=ejec_mark,
+                         markersize=4, color=cols['N2'])
+
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # REGRESSION LINES
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # equilibration dots
-    dots = np.arange(limit-0.5, limit+0.5, 0.25)
-    ax1.plot(dots, np.ones(len(dots)) * h2_ma[limit - 1], color=cols['H2'],
-             linestyle='', marker='o', markersize=2)
-    ax1.text(x=dots[-1] + 0.05, y=1.2 * h2_ma[limit - 1],
-             s='repeat to\nequilibrium', color=cols['H2'], fontsize=6,
-             ha='right', va='bottom')
+    fit_int_30 = np.polyfit(interp_mass_30, interp_int_30, 2)
+    fit_atm_30 = np.polyfit(interp_mass_30, interp_atm_30, 2)
+    fit_ejec_30 = np.polyfit(interp_mass_30, interp_ejec_30, 2)
 
-    p_xy = (x_vals[-1], p_tot[-1])
-    p_ma_xy = (0, p_tot_ma[1])
-    con = ConnectionPatch(xyA=p_xy, xyB=p_ma_xy,
-                          coordsA="data", coordsB="data",
-                          axesA=ax0, axesB=ax1, color="grey", linewidth=1.5)
-    fig.add_artist(con)
-    ax1.text(x=0.25, y=460, s='H$_2$O partitioning', fontsize=6, color='grey',
-             ha='left', va='top', rotation=295)
+    plot_masses_30 = np.linspace(4e21, 4e22, 50)
+    plot_masses_30 = plot_masses_30 * 1e-22
 
-    h2_xy = (x_vals[-1] + 0.1, 120)
-    h2_ma_xy = (-0.2, 270)
-    con = ConnectionPatch(xyA=h2_xy, xyB=h2_ma_xy,
-                          coordsA="data", coordsB="data", arrowstyle='->',
-                          axesA=ax0, axesB=ax1, color=cols['H2'])
-    fig.add_artist(con)
-    ax0.text(x=5.38, y=200, s='redox chemistry', fontsize=6, ha='right',
-             color=cols['H2'])
+    plot_int_30 = (fit_int_30[0] * plot_masses_30 ** 2) + \
+                  (fit_int_30[1] * plot_masses_30) + fit_int_30[2]
 
-    # h2o_xy = (x_vals[-1], h2o[-1])
-    # h2o_ma_xy = (0, h2o_ma[1])
-    # con = ConnectionPatch(xyA=h2o_xy, xyB=h2o_ma_xy,
-    #                       coordsA="data", coordsB="data",
-    #                       axesA=ax0, axesB=ax1, color=cols['H2O'])
-    # fig.add_artist(con)
+    plot_atm_30 = (fit_atm_30[0] * plot_masses_30 ** 2) + \
+                  (fit_atm_30[1] * plot_masses_30) + fit_atm_30[2]
+
+    plot_ejec_30 = (fit_ejec_30[0] * plot_masses_30 ** 2) + \
+                   (fit_ejec_30[1] * plot_masses_30) + fit_ejec_30[2]
+
+    for i in range(len(plot_int_30)):
+        for item in [plot_int_30, plot_atm_30, plot_ejec_30]:
+            if item[i] < 0.:
+                item[i] = 0.
+
+    ax0.plot(plot_masses_30, plot_int_30, color=cols['CO2'],
+             linestyle='-', linewidth=1.2, label='interior')
+    ax0.plot(plot_masses_30, plot_atm_30, color=cols['H2O'],
+             linestyle='-', linewidth=1.2, label='atmosphere')
+    ax0.plot(plot_masses_30, plot_ejec_30, color=cols['N2'],
+             linestyle='-', linewidth=1.2, label='not accreted')
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    fit_int_45 = np.polyfit(interp_mass_45, interp_int_45, 2)
+    fit_atm_45 = np.polyfit(interp_mass_45, interp_atm_45, 2)
+    fit_ejec_45 = np.polyfit(interp_mass_45, interp_ejec_45, 2)
+
+    plot_masses_45 = np.linspace(4e21, 4e22, 50)
+    plot_masses_45 = plot_masses_45 * 1e-22
+
+    plot_int_45 = (fit_int_45[0] * plot_masses_45 ** 2) + \
+                  (fit_int_45[1] * plot_masses_45) + fit_int_45[2]
+
+    plot_atm_45 = (fit_atm_45[0] * plot_masses_45 ** 2) + \
+                  (fit_atm_45[1] * plot_masses_45) + fit_atm_45[2]
+
+    plot_ejec_45 = (fit_ejec_45[0] * plot_masses_45 ** 2) + \
+                   (fit_ejec_45[1] * plot_masses_45) + fit_ejec_45[2]
+
+    for i in range(len(plot_int_45)):
+        for item in [plot_int_45, plot_atm_45, plot_ejec_45]:
+            if item[i] < 0.:
+                item[i] = 0.
+
+    ax1.plot(plot_masses_45, plot_int_45, color=cols['CO2'],
+             linestyle='-', linewidth=1.2, label='interior')
+    ax1.plot(plot_masses_45, plot_atm_45, color=cols['H2O'],
+             linestyle='-', linewidth=1.2, label='atmosphere')
+    ax1.plot(plot_masses_45, plot_ejec_45, color=cols['N2'],
+             linestyle='-', linewidth=1.2, label='not accreted')
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    fit_int_60 = np.polyfit(interp_mass_60, interp_int_60, 2)
+    fit_atm_60 = np.polyfit(interp_mass_60, interp_atm_60, 2)
+    fit_ejec_60 = np.polyfit(interp_mass_60, interp_ejec_60, 2)
+
+    plot_masses_60 = np.linspace(4e21, 4e22, 50)
+    plot_masses_60 = plot_masses_60 * 1e-22
+
+    plot_int_60 = (fit_int_60[0] * plot_masses_60 ** 2) + \
+                  (fit_int_60[1] * plot_masses_60) + fit_int_60[2]
+
+    plot_atm_60 = (fit_atm_60[0] * plot_masses_60 ** 2) + \
+                  (fit_atm_60[1] * plot_masses_60) + fit_atm_60[2]
+
+    plot_ejec_60 = (fit_ejec_60[0] * plot_masses_60 ** 2) + \
+                   (fit_ejec_60[1] * plot_masses_60) + fit_ejec_60[2]
+
+    for i in range(len(plot_int_60)):
+        for item in [plot_int_60, plot_atm_60, plot_ejec_60]:
+            if item[i] < 0.:
+                item[i] = 0.
+
+    ax2.plot(plot_masses_60, plot_int_60, color=cols['CO2'],
+             linestyle='-', linewidth=1.2, label='interior')
+    ax2.plot(plot_masses_60, plot_atm_60, color=cols['H2O'],
+             linestyle='-', linewidth=1.2, label='atmosphere')
+    ax2.plot(plot_masses_60, plot_ejec_60, color=cols['N2'],
+             linestyle='-', linewidth=1.2, label='not accreted')
+
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # LINE LABELS
+    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    # ax1.text(x=plot_masses_30[0], y=0.80 * plot_int_30[0], s='interior',
+    #          fontsize=9, color=cols['CO2'], rotation=-27, ha='left',
+    #          va='bottom')
+    # ax1.text(x=interp_mass_45[0], y=1.15 * interp_atm_45[0], s='atmosphere',
+    #          fontsize=9, color=cols['H2O'], rotation=12, ha='left',
+    #          va='bottom')
+    # ax1.text(x=2.8, y=0.13, s='not accreted',
+    #          fontsize=9, color=cols['N2'], rotation=20, ha='left',
+    #          va='bottom')
+
+    handles = []
+    handles.append(lines.Line2D([0.], [0.], label='interior',
+                                color='k', marker=int_mark,
+                                linestyle='-'))
+    handles.append(lines.Line2D([0.], [0.], label='atmosphere',
+                                color=cols['H2O'],  marker=atm_mark,
+                                linestyle='-'))
+    handles.append(lines.Line2D([0.], [0.], label='not accreted',
+                                color=cols['N2'],  marker=ejec_mark,
+                                linestyle='-'))
+
+    ax1.legend(handles=handles, loc='upper right', fontsize=8)
 
     plt.savefig(dir_path + '/figures/figure_5.pdf', dpi=200)
     # plt.show()
