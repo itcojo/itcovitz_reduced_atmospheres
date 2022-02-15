@@ -172,7 +172,7 @@ def plot_figure_6B():
         ax.tick_params(axis='both', which='both', direction='in')
 
     ax0.text(x=0.21, y=9e-5, s='(a)', ha='center')
-    ax1.text(x=0.215, y=-6.9, s='(b)', va='top', ha='center')
+    ax1.text(x=0.215, y=-3.1, s='(b)', va='top', ha='center')
     ax2.text(x=0.215, y=8e22, s='(c)', ha='center')
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -235,17 +235,17 @@ def plot_figure_6B():
 
     # atmosphere fO2
     ax1.plot(masses, fo2_atmos, color=cols['NH3'], linewidth=1.1)
-    ax1.text(x=1.75, y=-9.8, s='Atmosphere', color=cols['NH3'],
+    ax1.text(x=1.75, y=-6.6, s='Atmosphere', color=cols['NH3'],
              fontsize=7, rotation=-23, ha='right', va='bottom')
 
     # melt phase fO2
     ax1.plot(masses, fo2_bas, color=cols['CO2'], linewidth=1.1)
-    ax1.text(x=0.2, y=-8.2, s='Basalt', color=cols['CO2'],
+    ax1.text(x=0.2, y=-4.6, s='Basalt', color=cols['CO2'],
              fontsize=7, ha='left', va='top')
 
     ax1.plot(masses, fo2_per, color=cols['CO2'], linewidth=1.1)
-    ax1.text(x=0.2, y=-10.6, s='Peridotite', color=cols['CO2'],
-             fontsize=7, ha='left', va='bottom')
+    ax1.text(x=1.75, y=-7., s='Peridotite', color=cols['CO2'],
+             fontsize=7, ha='right', va='top')
 
     # FMQ comparison line
     ax1.plot(masses, fmq_line, color='grey', linestyle=':')
@@ -269,7 +269,7 @@ def plot_figure_6B():
                     labelbottom=False)
 
     ax1.set_ylabel('$\log_{10}$(fO$_2$)')
-    ax1.set_ylim([-14.8, -6.6])
+    ax1.set_ylim([-10.2, -2.8])
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # standard value impactor mass

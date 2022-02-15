@@ -37,7 +37,7 @@ def plot_figure_9():
 
     # standard values
     m_imp, v_imp, theta = 2e22, 20.7, 45.  # [kg], [km s-1], [deg]
-    temp, p_tot, h2o_init, tol = 1500., 450. * 1e5, 0.05, 1e-5  # [K], [Pa], [wt%]
+    temp, p_tot, h2o_init, tol = 1900., 450. * 1e5, 0.05, 1e-5  # [K], [Pa], [wt%]
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # SCALING BETWEEN fO2 AND FERRIC-TO-IRON RATIOS

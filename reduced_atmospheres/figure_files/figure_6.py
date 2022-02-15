@@ -199,7 +199,7 @@ def plot_figure_6():
 
     ax0.text(x=3., y=4e4, s='(a)', ha='right', va='top')
     ax1.text(x=3., y=625, s='(b)', ha='right', va='top')
-    ax2.text(x=0.215, y=-6.9, s='(c)', va='top', ha='center')
+    ax2.text(x=0.215, y=-3.1, s='(c)', va='top', ha='center')
     ax3.text(x=0.215, y=8e22, s='(d)', ha='center')
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -282,16 +282,16 @@ def plot_figure_6():
 
     # atmosphere fO2
     ax2.plot(masses, fo2_atmos, color=cols['NH3'], linewidth=1.1)
-    ax2.text(x=1.75, y=-9.8, s='Atmosphere', color=cols['NH3'],
-             fontsize=7, rotation=-23, ha='right', va='bottom')
+    ax2.text(x=1.75, y=-6.6, s='Atmosphere', color=cols['NH3'],
+             fontsize=7, rotation=-25, ha='right', va='bottom')
 
     # melt phase fO2
     ax2.plot(masses, fo2_bas, color=cols['CO2'], linewidth=1.1)
-    ax2.text(x=0.212, y=-13.4, s='Basalt', color=cols['CO2'],
+    ax2.text(x=0.208, y=-8.9, s='Basalt', color=cols['CO2'],
              fontsize=7, ha='left', va='bottom')
 
     ax2.plot(masses, fo2_per, color=cols['CO2'], linewidth=1.1)
-    ax2.text(x=0.2, y=-14.2, s='Peridotite', color=cols['CO2'],
+    ax2.text(x=0.2, y=-10.3, s='Peridotite', color=cols['CO2'],
              fontsize=7, ha='left', va='top')
 
     # FMQ comparison line
@@ -316,7 +316,7 @@ def plot_figure_6():
                     labelbottom=False)
 
     ax2.set_ylabel('$\log_{10}$(fO$_2$)')
-    ax2.set_ylim([-14.8, -6.6])
+    ax2.set_ylim([-10.85, -2.8])
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # standard value impactor mass
@@ -326,7 +326,7 @@ def plot_figure_6():
     idxs = [i for i, e in enumerate(fe_bas) if e != 0]
     ax3.plot([masses[i] for i in idxs], [fe_bas[i] for i in idxs],
              color='k', linewidth=1.)
-    ax3.text(x=0.7, y=5e21, s='Basalt', color='k',
+    ax3.text(x=0.7, y=4e21, s='Basalt', color='k',
              fontsize=7, rotation=18, ha='left', va='bottom')
 
     ax3.plot(masses, fe_per, color='k', linewidth=1.)

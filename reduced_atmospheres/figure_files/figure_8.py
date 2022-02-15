@@ -338,7 +338,7 @@ def plot_figure_8():
     # y-axis limits and scales
     axs['1B_atm'].set_ylim([2e1, 6e4])
     axs['1B_atm'].set_yscale('log')
-    axs['1B_fo2'].set_ylim([-14.9, -7.3])
+    axs['1B_fo2'].set_ylim([-10.85, -2.8])
 
     for ax in ['2_atm', '3A_atm', '3B_atm']:
         axs[ax].set_ylim(axs['1B_atm'].get_ylim())
@@ -453,7 +453,7 @@ def plot_figure_8():
     axs['1B_fo2'].text(masses[0], 1.01 * fo2_melt_per[1][0][-1], s='P',
                        color=cols['CO2'], va='top')
     axs['1B_fo2'].text(1.8, 1.01 * fo2_melt_bas[1][0][-1], s='ΔFMQ = 0',
-                       fontsize=7, color=cols['CO2'], va='top', ha='right')
+                       fontsize=7, color='grey', va='top', ha='right')
     axs['1B_fo2'].text(masses[0], iw_vals[0] - 2.1, s='ΔIW = -2',
                        fontsize=7, color='grey', va='top', ha='left')
 
@@ -640,27 +640,27 @@ def plot_figure_8():
     axs['2_atm'].text(x=4.1, y=5e1, s='P - peridotitic melt')
     axs['2_atm'].text(x=4.1, y=1e1, s='B - basaltic melt')
 
-    axs['2_fo2'].text(x=4.1, y=-9.7, s='(Fiducial)')
-    axs['2_fo2'].text(x=4.1, y=-10.4, s='  \u2A2F melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-11.1, s='  \u2A2F iron distribution')
+    axs['2_fo2'].text(x=4.1, y=-5.7, s='(Fiducial)')
+    axs['2_fo2'].text(x=4.1, y=-6.4, s='  \u2A2F melt-atmosphere')
+    axs['2_fo2'].text(x=4.1, y=-7.1, s='  \u2A2F iron distribution')
 
-    axs['2_fo2'].text(x=4.1, y=-12.4, s='(Model 1B)')
-    axs['2_fo2'].text(x=4.1, y=-13.1, s='  \u2A2F melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-13.8, s='  \u2713 iron distribution')
+    axs['2_fo2'].text(x=4.1, y=-8.4, s='(Model 1B)')
+    axs['2_fo2'].text(x=4.1, y=-9.1, s='  \u2A2F melt-atmosphere')
+    axs['2_fo2'].text(x=4.1, y=-9.8, s='  \u2713 iron distribution')
 
-    axs['2_fo2'].text(x=4.1, y=-15.1, s='(Model 2)')
-    axs['2_fo2'].text(x=4.1, y=-15.8, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-16.5, s='  \u2A2F iron distribution')
+    axs['2_fo2'].text(x=4.1, y=-11.1, s='(Model 2)')
+    axs['2_fo2'].text(x=4.1, y=-11.8, s='  \u2713 melt-atmosphere')
+    axs['2_fo2'].text(x=4.1, y=-12.5, s='  \u2A2F iron distribution')
 
-    axs['2_fo2'].text(x=4.1, y=-17.8, s='(Model 3A)')
-    axs['2_fo2'].text(x=4.1, y=-18.5, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-19.2, s='  \u2713 iron distribution')
-    axs['2_fo2'].text(x=4.1, y=-19.9, s='  [interior iron in melt]')
+    axs['2_fo2'].text(x=4.1, y=-13.8, s='(Model 3A)')
+    axs['2_fo2'].text(x=4.1, y=-14.5, s='  \u2713 melt-atmosphere')
+    axs['2_fo2'].text(x=4.1, y=-15.2, s='  \u2713 iron distribution')
+    axs['2_fo2'].text(x=4.1, y=-15.9, s='  [interior iron in melt]')
 
-    axs['2_fo2'].text(x=4.1, y=-21.2, s='(Model 3B)')
-    axs['2_fo2'].text(x=4.1, y=-21.9, s='  \u2713 melt-atmosphere')
-    axs['2_fo2'].text(x=4.1, y=-22.6, s='  \u2713 iron distribution')
-    axs['2_fo2'].text(x=4.1, y=-23.3, s='  [interior iron in other]')
+    axs['2_fo2'].text(x=4.1, y=-17.2, s='(Model 3B)')
+    axs['2_fo2'].text(x=4.1, y=-17.9, s='  \u2713 melt-atmosphere')
+    axs['2_fo2'].text(x=4.1, y=-18.6, s='  \u2713 iron distribution')
+    axs['2_fo2'].text(x=4.1, y=-19.3, s='  [interior iron in other]')
 
     plt.savefig(dir_path + '/figures/figure_8.pdf', dpi=200)
     # plt.show()

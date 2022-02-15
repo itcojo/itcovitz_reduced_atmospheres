@@ -1,6 +1,7 @@
 import csv
 import numpy as np
 import os
+from pprint import pprint
 import re
 import scipy.optimize as opt
 import subprocess
@@ -1145,8 +1146,8 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         print('\n>>> Total atmospheric pressure : %.2f' %
               (1e-5 * np.sum(list(p_atmos.values()))))
 
-    return p_atmos, n_atmos, [p_init, p_erosion, p_ocean, p_degas, p_chem],\
-           [n_init, n_erosion, n_ocean, n_degas, n_chem]
+    return p_atmos, n_atmos, [p_init, p_erosion, p_degas, p_ocean, p_chem],\
+           [n_init, n_erosion, n_degas, n_ocean, n_chem]
 
 
 def available_iron(m_imp, vel_imp, angle, imp_comp, max_hse=False):
@@ -2209,7 +2210,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
     print("*** BASALT ***")
 
     # display values in command line as code proceeds?
-    display = True
+    display = False
 
     # check for valid model version
     if model_version not in ['1A', '1B', '2', '3A', '3B']:

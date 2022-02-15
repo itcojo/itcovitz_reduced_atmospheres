@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+from pprint import pprint
 import sys
 
 import reduced_atmospheres
@@ -44,12 +45,11 @@ figure_4 = False
 figure_5 = False
 figure_6 = False
 figure_7 = False
-figure_8 = True
+figure_8 = False
 figure_9 = False
 
 # special figures
 # reduced_atmospheres.figure_files.figure_test_values.plot_test()
-# reduced_atmospheres.compare
 # sys.exit()
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -82,7 +82,7 @@ temps = np.linspace(700, 1700, 20, endpoint=True)
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # STANDARD VALUES
-temp = 1500.  # system temperature [K]
+temp = 1900.  # system temperature [K]
 
 # m_imp = 2e22  # impactor mass [kg]
 
@@ -207,6 +207,8 @@ if model_run:
 
         print('\n\x1b[1;33m>>> Equilibrated system saved to ' +
               save_file + '\x1b[0m')
+
+        sys.exit()
 
     sys.exit()
 

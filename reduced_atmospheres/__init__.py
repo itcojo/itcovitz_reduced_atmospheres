@@ -23,3 +23,5 @@ import reduced_atmospheres.figure_files.figure_9
 import reduced_atmospheres.figure_files.figure_algebra_error
 import reduced_atmospheres.figure_files.figure_test_values
 import reduced_atmospheres.figure_files.IPLU_figures
+import reduced_atmospheres.compare_Zahnle_figure_8
+import reduced_atmospheres.compare_Zahnle_init_atmos
