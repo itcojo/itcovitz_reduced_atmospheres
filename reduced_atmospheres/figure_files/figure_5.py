@@ -28,15 +28,9 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_5():
-    """
-    Plots the distribution of impactor iron between the target interior,
-    atmosphere, and escaping the system, as a function of impactor mass.
+    """Plot Figure 7 from Itcovitz et al. (2022).
 
-    Parameters
-    ----------
-
-    Returns
-    -------
+    Distribution of impactor iron between the target interior, atmosphere, and escaping the system, as a function of impactor mass.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -129,7 +123,7 @@ def plot_figure_5():
     int_mark = 's'
     ejec_mark = 'X'
 
-    file = dir_path + '/reduced_atmospheres/data/iron_distributions.txt'
+    file = f"{dir_path}/reduced_atmospheres/data/iron_distributions.txt"
     with open(file, 'r') as f:
         count = -1
         for line in f:
@@ -314,5 +308,5 @@ def plot_figure_5():
 
     ax1.legend(handles=handles, loc='upper right', fontsize=8)
 
-    plt.savefig(dir_path + '/figures/figure_5.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_5.pdf", dpi=200)
     # plt.show()

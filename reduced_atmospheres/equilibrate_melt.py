@@ -9,6 +9,7 @@ import sys
 from copy import deepcopy as dcop
 from scipy.stats import linregress
 from tabulate import tabulate
+from typing import Optional, Tuple
 
 # directory where FastChem is installed
 import reduced_atmospheres
@@ -18,7 +19,7 @@ dir_fastchem = reduced_atmospheres.dir_fastchem
 gC = reduced_atmospheres.constants.Constants()
 
 # directory where 'itcovitz_reduced_atmospheres/reduced_atmospheres' is located
-dir_path = reduced_atmospheres.dir_path + '/reduced_atmospheres'
+dir_path = f"{reduced_atmospheres.dir_path}/reduced_atmospheres"
 
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -26,47 +27,53 @@ dir_path = reduced_atmospheres.dir_path + '/reduced_atmospheres'
 # READ/WRITE THINGS
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def read_fastchem_output(sys_id):
-    """
-    Reads the FastChem output files and creates dictionaries of species'
-    partial pressures and moles.
+def read_fastchem_output(sys_id: str) -> Tuple[dict, dict]:
+    """Read FastChem outputs.
 
-    Parameters
-    ----------
-    sys_id : str
-        Label of the atmosphere-magma system ('system_id'), used as file names
+    Reads the FastChem output files and creates dictionaries of species' partial pressures and moles [UPDATED FOR FASTCHEM V2].
 
-    Returns
-    -------
-    p_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [Pa].
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) moles of each species.
+    Args:
+        sys_id (str): Label of the atmosphere-melt system ('system_id'), used as file names.
+
+    Returns:
+        p_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of each species [Pa].
+        n_atmos (dict):  Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) moles of each species.
 
     """
-    file = dir_path + '/data/FastChem/' + sys_id + '_output.dat'
+    file = f"{dir_path}/data/FastChem/{sys_id}_output.dat"
+
     data = [i.strip().split() for i in open(file).readlines()]
-    headers, vals = data[0], data[1]
+    
+    # get unique list of headers
+    headers, skip = [], []
+    for idx in range(len(data[0]) - 1):
+        if idx in skip:
+            pass
+        elif '(' in data[0][idx+1]:
+            headers.append(data[0][idx] + data[0][idx+1])
+            skip.append(idx+1)
+        else:
+            headers.append(data[0][idx])
 
-    display = False
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+    display = False
     if display:
         # display system properties
-        table_list = [['Pressure', 'bar', float(vals[0])],
-                      ['Temperature', 'K', float(vals[1])],
-                      ['n(H)', 'cm-3', float(vals[2])],
-                      ['n(g)', 'cm-3', float(vals[3])],
-                      ['mean weight', 'u', float(vals[4])]
-                      ]
+        table_list = [
+            ['Pressure', 'bar', float(data[1][0])],
+            ['Temperature', 'K', float(data[1][1])],
+            ['n(H)', 'cm-3', float(data[1][2])],
+            ['n(g)', 'cm-3', float(data[1][3])],
+            ['mean weight', 'u', float(data[1][4])]
+        ]
         print('\n')
         print('\x1b[1;31m*** After FastChem ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl',
-                       headers=['System Property', 'Unit', 'Value'],
-                       floatfmt=("", "", ".5e")))
+        print(tabulate(
+            table_list,
+            tablefmt='orgtbl',
+            headers=['System Property', 'Unit', 'Value'],
+            floatfmt=("", "", ".5e")
+        ))
         print('\n')
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -74,27 +81,23 @@ def read_fastchem_output(sys_id):
     loc = None
     for ii in range(len(data[0])):
         # m(u) is the last system property before the molecules begin
-        if data[0][ii] == 'm(u)':
+        if data[0][ii] == 'm' and data[0][ii+1] == '(u)':
             loc = ii
             break
     loc += 1
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # fill in dictionary of species' abundances
+    # fill in dictionary of species' abundances (mixing ratio)
     species = {}
-    mol_idx = 5
-    for iii in range(loc, len(data[0])):
+    for iii in range(loc, len(headers)):
         # remove '1' from species names
-        if '1' in data[0][iii]:
-            mol = data[0][iii].replace('1', '')
+        if '1' in headers[iii]:
+            mol = headers[iii].replace('1', '')
         else:
-            mol = data[0][iii]
+            mol = headers[iii]
 
         # fill in species dictionary
-        species[mol] = data[1][mol_idx]
-
-        # keep track of where we are in 'data[1]'
-        mol_idx += 1
+        species[mol] = data[1][iii]
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # sort species by their abundances
@@ -110,7 +113,7 @@ def read_fastchem_output(sys_id):
     # create dictionary of species' partial pressures
     p_atmos = {}  # [Pa]
     for iv in range(len(sorted_mols)):
-        if sorted_vals[iv] > 1e-15:
+        if sorted_vals[iv] > 1e-9:
             p_atmos[sorted_mols[iv]] = sorted_vals[iv] * float(data[1][0]) * 1e5
 
     # a.x = b matrix equation, where x is a list of molecules' moles
@@ -144,95 +147,97 @@ def read_fastchem_output(sys_id):
         p_tot = np.sum(list(p_atmos.values()))
         for mol in list(p_atmos.keys()):
             if p_atmos[mol] / p_tot > 1e-10:
-                table_list.append([mol, p_atmos[mol] / p_tot,
-                                   p_atmos[mol], n_atmos[mol]])
+                table_list.append([
+                    mol, 
+                    p_atmos[mol] / p_tot,
+                    p_atmos[mol] * 1e-5, 
+                    n_atmos[mol]
+                ])
 
-        print(tabulate(table_list, tablefmt='orgtbl', headers=['Species',
-                       'Mixing Ratio', 'Partials /bar', 'Moles'],
-                       floatfmt=("", ".2e", ".2e", ".2e")))
+        print(tabulate(
+            table_list, 
+            tablefmt='orgtbl', 
+            headers=['Species', 'Mixing Ratio', 'Partials /bar', 'Moles'],
+             floatfmt=("", ".2e", ".2e", ".2e")
+        ))
 
     return p_atmos, n_atmos
 
 
-def run_fastchem_files(sys_id):
-    """
-    Edit the FastChem files to use the data produced for the current system,
-    and run the FastChem code.
+def run_fastchem_files(sys_id: str) -> None:
+    """Run FastChem.
 
-    Parameters
-    ----------
-    sys_id : str
-        Label of the atmosphere-magma system ('system_id'), used as file names
+    Edit the FastChem files to use the data produced for the current system, and run the FastChem code.
 
-    Returns
-    -------
+    Args:
+        sys_id (str): Label of the atmosphere-melt system ('system_id'), used as file names
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # open config file
-    with open(dir_fastchem + '/input/config.input', 'r') as fc:
+    with open(f"{dir_fastchem}/input/config.input", "r") as fc:
         # edit location of PT profile
         data = fc.readlines()
-        data[4] = dir_path + '/data/FastChem/' + sys_id + '_PT.dat\n'
-        data[7] = dir_path + '/data/FastChem/' + sys_id + '_output.dat\n'
-        data[10] = dir_path + '/data/FastChem/' + sys_id + '_monitor.dat\n'
+
+        data[1] = f"{dir_path}/data/FastChem/{sys_id}_PT.dat\n"
+        data[4] = f"{dir_path}/data/FastChem/{sys_id}__output.dat\n"
+        data[7] = f"{dir_path}/data/FastChem/{sys_id}__monitor.dat\n"
+        data[16] = f"{dir_path}/data/FastChem/{sys_id}__abund.dat\n"
 
     # open config file and edit in changes
-    with open(dir_fastchem + '/input/config.input', 'w') as fc:
+    with open(f"{dir_fastchem}/input/config.input", "w") as fc:
         fc.writelines(data)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # open parameters file
-    with open(dir_fastchem + '/input/parameters.dat', 'r') as fc:
+    with open(f"{dir_fastchem}/input/parameters.dat", "r") as fc:
         # edit location of PT profile
         data = fc.readlines()
-        data[1] = dir_path + '/data/FastChem/' + sys_id + '_abund.dat\n'
+        data[1] = f"{dir_path}/data/FastChem/{sys_id}_abund.dat\n"
 
     # open parameters file and edit in changes
-    with open(dir_fastchem + '/input/parameters.dat', 'w') as fc:
+    with open(f"{dir_fastchem}/input/parameters.dat", "w") as fc:
         fc.writelines(data)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # FastChem bash command
     fastchem_bash = ["./fastchem", "input/config.input"]
-    process = subprocess.run(fastchem_bash, cwd=dir_fastchem,
-                             capture_output=True)
+    process = subprocess.run(
+        fastchem_bash, 
+        cwd=dir_fastchem,
+        capture_output=True
+    )
 
 
-def write_fastchem(path, abundances, T, P):
-    """
-    Writes the atmosphere elemental abundances, total atmospheric pressure,
-    and temperature, to .dat files readable by FastChem.
+def write_fastchem(
+    path: str, 
+    abundances: dict, 
+    T: float, 
+    P: float,
+) -> None:
+    """Write FastChem files ready for run.
 
+    Writes the atmosphere elemental abundances, total atmospheric pressure, and temperature, to .dat files readable by FastChem.
 
-    Parameters
-    ----------
-    path : str
-        Path to where the files will be saved.
-    abundances : dict
-        Elemental abundances in the atmosphere.
-        Keys (str) elements.
-        Values (float) abundances in the solar convention.
-    T : float [K]
-        Temperature of the atmosphere.
-    P : float [Pa]
-        Total pressure in the atmosphere.
-
-    Returns
-    -------
+    Args:
+        path (str): Path to where the files will be saved.
+        abundances (dict):  Elemental abundances in the atmosphere. Keys (str) elements. Values (float) abundances in the solar convention.
+        T (float): Temperature of the atmosphere, in units of 'K'.            
+        P (float): Total pressure in the atmosphere, in units of 'Pa'.
 
     """
     # abundances
-    file_a = open(path + '_abund.dat', 'w')
+    file_a = open(f"{path}_abund.dat", "w")
     file_a.write("# Chemical composition of a post_impact atmosphere:\n")
     for elem in sorted(list(abundances.keys())):
-        file_a.write(elem + '    ' + '%.10f' % abundances[elem] + '\n')
+        # file_a.write(elem + '    ' + '%.10f' % abundances[elem] + '\n')
+        file_a.write(f"{elem}    {abundances[elem]:.10f}\n")
 
     # environment
-    file_e = open(path + '_PT.dat', 'w')
-    file_e.write("# Post_impact atmosphere, temperature in K, pressure in bar"
-                 "\n")
-    file_e.write('%.6e' % T + '    ' + '%.6e' % (P * 1e-5) + '\n')
+    file_e = open(f"{path}_PT.dat", "w")
+    file_e.write("# Post_impact atmosphere, pressure in bar, temperature in K\n")
+    # file_e.write('%.6e' % (P * 1e-5) + '    ' + '%.6e' % T + '\n')
+    file_e.write(f"{P * 1e-5:.6e}    {T:.6e}\n")
 
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -240,29 +245,19 @@ def write_fastchem(path, abundances, T, P):
 # USEFUL CALCULATIONS
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def calc_anhydrous_mass(fe2o3, feo, oxides):
-    """
-    Calculate the mass of anhydrous components of the silicate melt phase.
+def calc_anhydrous_mass(fe2o3: float, feo: float, oxides: dict) -> float:
+    """Calculate the mass of anhydrous components of the silicate melt phase.
 
-    Parameters
-    ----------
-    fe2o3 : float [moles]
-        Ferric iron in the melt phase.
-    feo : float [moles]
-        Ferrous iron in the melt phase.
-    oxides : dict
-        Moles of non-iron species in the melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in melt.
+    Args:
+        fe2o3 (float): Ferric iron in the melt phase, in units of moles.
+        feo (float): Ferrous iron in the melt phase, in units of moles.
+        oxides (dict): Moles of non-iron species in the melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
 
-    Returns
-    -------
-    m_melt : float [kg]
-        Mass of the anhydrous melt.
+    Returns:
+        m_melt (float): Mass of the anhydrous melt, in units of 'kg'.
 
     """
-    m_melt = (fe2o3 * gC.common_mol_mass['Fe2O3']) + (
-                feo * gC.common_mol_mass['FeO'])
+    m_melt = fe2o3 * gC.common_mol_mass['Fe2O3'] + feo * gC.common_mol_mass['FeO']
     for mol in list(oxides.keys()):
         M = gC.common_mol_mass[mol]
         m_melt += M * oxides[mol]
@@ -270,24 +265,16 @@ def calc_anhydrous_mass(fe2o3, feo, oxides):
     return m_melt
 
 
-def calc_elem_abund(n_atmos):
-    """
-    Calculate the elemental abundances within the gas, using the Solar
-    Abundance convention (normalised to A(H) = 12).
+def calc_elem_abund(n_atmos: dict) -> dict:
+    """Calculate the elemental abundances within a gas. 
+    
+    Uses the Solar Abundance convention (normalised to A(H) = 12).
 
-    Parameters
-    ----------
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
+    Args:
+        n_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
 
-    Returns
-    -------
-    elem_frac : dict
-        Elemental composition of the atmosphere.
-        Keys (str) elements.
-        Values (float)
+    Returns:
+        elem_frac (dict): Elemental composition of the atmosphere. Keys (str) elements. Values (float)
     """
     nums = {}  # [mol]
 
@@ -329,50 +316,39 @@ def calc_elem_abund(n_atmos):
     return abund
 
 
-def escape_velocity(m1, m2, r1, r2):
-    """
-    Calculates the mutual escape velocity between two bodies.
+def escape_velocity(m1: float, m2: float, r1: float, r2: float) -> float:
+    """Calculate the mutual escape velocity between two bodies.
 
-    Parameters
-    ----------
-    m1 : float [kg]
-        Mass of the first body.
-    m2 : float [kg]
-        Mass of the second body.
-    r1 : float [m]
-        Radius of the first body.
-    r2 : float [m]
-        Radius of the first body.
+    Args:
+        m1 (float): Mass of the first body, in units of 'kg'.
+        m2 (float): Mass of the second body, in units of 'kg'.
+        r1 (float): Radius of the first body, in units of 'm'.
+        r2 (float): Radius of the first body, in units of 'm'.
 
-    Returns
-    -------
-    v_esc : float [km s-1]
-        Mutual escape velocity.
+    Returns:
+        v_esc (float): Mutual escape velocity, in units of 'km s-1'.
+            
     """
     return np.sqrt(2. * gC.G * (m1 + m2) / (r1 + r2)) * 1e-3
 
 
-def specific_energy(m_t, m_i, v_i, b):
-    """
-    Calculates the modified specific energy of an impact for the target.
+def specific_energy(
+    m_t: float, 
+    m_i: float, 
+    v_i: float, 
+    b: float,
+) -> Tuple[float, float]:
+    """Calculate modified specific energy of an impact.
 
-    Parameters
-    ----------
-    m_t : float [kg]
-        Mass of the target.
-    m_i : float [kg}
-        Mass of the impactor.
-    v_i : float [km s-1]
-        Impact velocity.
-    b : float
-        Impact parameter (sin of impact angle).
+    Args:
+        m_i (float): Mass of the impactor, in units of 'kg'.
+        m_t (float): Mass of the target, in units of 'kg'.
+        v_i (float): Impact velocity, in units of 'km s-1'.            
+        b (float): Impact parameter (sin of impact angle).
 
-    Returns
-    -------
-    Q_S : float [J kg-1]
-        Modified specific energy of impact for target.
-    Q_R : float [J kg-1]
-        Specific energy of impact for target.
+    Returns:
+        Q_S (float): Modified specific energy of impact for target, in units of 'J kg-1'.
+        Q_R (float): Specific energy of impact for target, in units of 'J kg-1'.
 
     """
     m_tot = m_t + m_i  # [kg]
@@ -383,26 +359,15 @@ def specific_energy(m_t, m_i, v_i, b):
     return Q_S, Q_R
 
 
-def update_pressures(n_atmos):
-    """
-    Updates the partial pressures in the atmosphere and the total pressure,
-    given the composition of the atmosphere in moles.
+def update_pressures(n_atmos: dict) -> Tuple[dict, float]:
+    """Update species' pressures in the atmosphere.
 
-    Parameters
-    ----------
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
+    Args:
+        n_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
 
-    Returns
-    -------
-    p_atmos : dict
-        Partial pressures in the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of species in atmosphere [Pa].
-    p_tot : float [Pa]
-        Total atmospheric pressure.
+    Returns:
+        p_atmos (dict): Partial pressures in the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of species in atmosphere, in units of 'Pa'.
+        p_tot (float): Total atmospheric pressure, in units of 'Pa'.
 
     """
     m_atm = 0.  # total mass of the atmosphere
@@ -428,22 +393,23 @@ def update_pressures(n_atmos):
 # CALCULATE FUGACITIES
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def calc_basalt_fo2(fe2o3, feo, oxides, T, P):
-    """
-    Calculates the oxygen fugacity of the given basaltic magma composition.
+def calc_basalt_fo2(
+    fe2o3: float, 
+    feo: float, 
+    oxides: dict, 
+    T: float, 
+    P: float,
+) -> float:
+    """Calculate the oxygen fugacity of a basaltic melt composition.
 
-    Parameters
-    ----------
+    Args:
+        feo2 (float): Moles of Fe2O3 in the melt.
+        feo (float): Moles of FeO in the melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
-
-    Returns
-    -------
-    fO2_melt : float
-        Oxygen fugacity of the magma.
+    Returns:
+        fO2_melt (float): Oxygen fugacity of the melt (log base 10).
 
     """
     # total anhydrous moles in the melt
@@ -460,21 +426,26 @@ def calc_basalt_fo2(fe2o3, feo, oxides, T, P):
     return fO2_melt
 
 
-def calc_peridotite_fo2(fe2o3, feo, oxides, T, P, tol=1e-5):
-    """
-    Calculates the oxygen fugacity of the given peridotitic magma composition.
+def calc_peridotite_fo2(
+    fe2o3: float, 
+    feo: float, 
+    oxides: dict, 
+    T: float, 
+    P: float,
+    tol: Optional[float] = 1e-5,
+) -> float:
+    """Calculate the oxygen fugacity of a peridotitic melt composition.
 
-    Parameters
-    ----------
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        feo2 (float): Moles of Fe2O3 in the melt.
+        feo (float): Moles of FeO in the melt.
+        oxides (dict): Moles of non-iron species in the melt. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
+        tol (optional, float): Tolerance in what is classified as 'zero moles'.
 
-    Returns
-    -------
-    fO2_melt : float
-        Oxygen fugacity of the magma.
+    Returns:
+        fO2_melt (float): Oxygen fugacity of the melt (log base 10).
 
     """
     # total anhydrous moles in the melt
@@ -492,23 +463,17 @@ def calc_peridotite_fo2(fe2o3, feo, oxides, T, P, tol=1e-5):
     return fO2_melt
 
 
-def calc_ph2o(h2o_mag, m_melt):
-    """
-    Calculate the partial pressure of H2O predicted to be in the atmosphere
-    in equilibrium with the current amount of H2O in the magma. Follows the
-    prescription of Carroll and Holloway (1994).
+def calc_ph2o(h2o_mag: float, m_melt: float) -> float:
+    """Calculate the partial pressure of H2O at melt-atmosphere equilibrium.
 
-    Parameters
-    ----------
-    h2o_mag : float
-        Moles of H2O in the magma.
-    m_melt : float [kg]
-        Mass of the magma.
+    Follows the prescription of Carroll and Holloway (1994).
 
-    Returns
-    -------
-    p_H2O : float [Pa]
-        Predicted partial pressure of H2O.
+    Args: 
+        h2o_mag (float): Moles of H2O in the melt.
+        m_melt (float): Mass of the melt, in units of 'kg'.
+
+    Returns:
+        p_H2O (float): Predicted partial pressure of H2O, in units of 'Pa'.
 
     """
     m_frac_H2O = h2o_mag * gC.common_mol_mass['H2O'] / m_melt
@@ -516,27 +481,21 @@ def calc_ph2o(h2o_mag, m_melt):
     return p_H2O
 
 
-def fo2_atm(h2, h2o, T):
-    """
-    Calculates the oxygen fugacity of the atmosphere as per the equilibrium
-    between hydrogen and oxygen, and water. Uses the formulation of Ohmoto
-    and Kerrick (1977).
+def fo2_atm(h2: float, h2o: float, T: float) -> float:
+    """Calculate the oxygen fugacity of an atmosphere.
+
+    Uses the equilibrium between hydrogen and oxygen, and water to determine fO2. Uses the formulation of Ohmoto and Kerrick (1977).
 
     Equilibrium form:  H2 + 0.5 O2 <=> H2O
 
-    Parameters
-    ----------
-    h2 : float [moles]
-        H2 in the atmosphere.
-    h2o : float [moles]
-        H2O in the atmosphere.
-    T : float [K]
-        Temperature of the atmosphere.
+    Args:
+        h2 (float): Moles of H2 in the atmosphere.
+        h2o (float): Moles of H2O in the atmosphere.
+        T (float):  Temperature of the atmosphere, in units of 'K'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the atmosphere.
+    Returns:
+        log10_fO2 (float): Oxygen fugacity of the atmosphere (log base 10).
+
     """
     # assume ideal gas, so gas activities are equal to mixing ratios
     log10_K = (12510 / T) - (0.979 * np.log10(T)) + 0.483
@@ -545,22 +504,17 @@ def fo2_atm(h2, h2o, T):
     return log10_fO2
 
 
-def fo2_iw(T, P):
-    """
-    Calculates the oxygen fugacity of the melt using the pure/theoretical
-    iron-wustite equilibrium buffer of Frost (1991).
+def fo2_iw(T: float, P: float) -> float:
+    """Calculate the oxygen fugacity of the reference IW buffer.
+    
+    Uses the pure/theoretical iron-wustite equilibrium buffer of Frost (1991).
 
-    Parameters
-    ----------
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the IW buffer.
+    Returns:
+        log10_fO2 (float): Oxygen fugacity of the IW buffer (log base 10).
     """
     a, b, c = -27489, 6.702, 0.055  # empirical constants
     log10_fO2 = (a / T) + b + c * ((P * 1e-5 - 1) / T)
@@ -568,22 +522,17 @@ def fo2_iw(T, P):
     return log10_fO2
 
 
-def fo2_fmq(T, P):
-    """
-    Calculates the oxygen fugacity of the melt using the pure/theoretical
-    fayalite-magnetite-quartz equilibrium buffer of Frost (1991).
+def fo2_fmq(T: float, P: float) -> float:
+    """Calculate the oxygen fugacity of the reference FMQ buffer.
 
-    Parameters
-    ----------
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Uses the pure/theoretical fayalite-magnetite-quartz equilibrium buffer of Frost (1991).
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the IW buffer.
+    Args:
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
+
+    Returns:
+        log10_fO2 (float): Oxygen fugacity of the FMQ buffer (log base 10).
     """
     a, b, c = -25096.3, 8.735, 0.110  # empirical constants
     log10_fO2 = (a / T) + b + c * ((P * 1e-5 - 1) / T)
@@ -591,26 +540,19 @@ def fo2_fmq(T, P):
     return log10_fO2
 
 
-def fo2_f91_rh12(feo, T, P):
-    """
-    Calculates the oxygen fugacity of the melt. The pure/theoretical
-    iron-wustite equilibrium buffer of Frost (1991) is used, with the addition
-    of a term accounting for the change in FeO to Fe ratio (Righter & Ghiorso,
-    2012).
+def fo2_f91_rh12(feo: float, T: float, P: float) -> float:
+    """Calculate the oxygen fugacity of the melt. 
+    
+    The pure/theoretical iron-wustite equilibrium buffer of Frost (1991) is used, with the addition of a term accounting for the change in FeO to Fe ratio from Righter & Ghiorso, 2012.
 
-    Parameters
-    ----------
-    feo : float
-        Molar fraction of iron oxide in the melt.
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        feo (float): Moles of FeO in the melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the IW buffer.
+    Returns:
+        log10_fO2 (float): Oxygen fugacity of the melt buffer (log base 10).
+
     """
     a, b, c = -27489, 6.702, 0.055  # empirical constants
     fe = 0.98  # how 'pure' the metal phase is in iron
@@ -619,30 +561,24 @@ def fo2_f91_rh12(feo, T, P):
     return log10_fO2
 
 
-def fo2_kc91(fe2o3, feo, oxides, T, P):
-    """
-    Calculates the oxygen fugacity of the melt using the formulation of
-    Kress & Carmichael (1991).
+def fo2_kc91(
+    fe2o3: float, 
+    feo: float, 
+    oxides: dict, 
+    T: float, 
+    P: float
+) -> float:
+    """ Calculate the oxygen fugacity of the melt using the formulation of Kress & Carmichael (1991).
 
-    Parameters
-    ----------
-    fe2o3 : float [moles]
-        Ferric iron in the melt.
-    feo : float [moles]
-        Ferrous iron in the melt.
-    oxides : dict
-        Moles of non-iron species in the melt.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in melt.
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        feo2 (float): Moles of Fe2O3 in the melt.
+        feo (float): Moles of FeO in the melt.
+        oxides (dict): Moles of non-iron species in the melt. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the FQM buffer.
+    Returns:
+        fO2_melt (float): Oxygen fugacity of the melt (log base 10).
 
     """
     [A, B, C, D, E, F, G, H] = kc_consts(dcop(fe2o3), dcop(feo), oxides, T, P)
@@ -655,30 +591,24 @@ def fo2_kc91(fe2o3, feo, oxides, T, P):
     return log10_fO2
 
 
-def fo2_sossi(fe2o3, feo, oxides, T, P):
-    """
-    Calculates the oxygen fugacity of the melt phase using the formulation of
-    Sossi+ (2020).
+def fo2_sossi(
+    fe2o3: float, 
+    feo: float, 
+    oxides: dict, 
+    T: float,
+    P: float
+) -> float:
+    """Calculate the oxygen fugacity of the melt phase using the formulation of Sossi+ (2020).
 
-    Parameters
-    ----------
-    fe2o3 : float [moles]
-        Ferric iron in the melt.
-    feo : float [moles]
-        Ferrous iron in the melt.
-    oxides : dict
-        Moles of non-iron species in the melt.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in melt.
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        feo2 (float): Moles of Fe2O3 in the melt.
+        feo (float): Moles of FeO in the melt.
+        oxides (dict): Moles of non-iron species in the melt. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the melt phase oxygen fugacity.
+    Returns:
+        fO2_melt (float): Oxygen fugacity of the melt (log base 10).
 
     """
     IW = fo2_iw(T, P)  # log10
@@ -690,37 +620,37 @@ def fo2_sossi(fe2o3, feo, oxides, T, P):
     return fO2
 
 
-def kc_consts(fe2o3, feo, oxides, T, P):
-    """
-    Returns the constants for the Kress and Carmichael (1991) parameterisation
-    for the FQM buffer.
+def kc_consts(
+    fe2o3: float, 
+    feo: float, 
+    oxides: dict, 
+    T: float, 
+    P: float
+) -> Tuple[float, float, float, float, float, float, float, float]:
+    """Return constants for the Kress and Carmichael (1991) parameterisation of the FMQ buffer.
 
-    Parameters
-    ----------
-    fe2o3 : float [moles]
-        Ferric iron in the melt.
-    feo : float [moles]
-        Ferrous iron in the melt.
-    oxides : dict
-        Moles of non-iron species in the melt.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in melt.
-    T : float [K]
-        Temperature of the melt.
-    P : float [Pa]
-        Pressure in the melt.
+    Args:
+        feo2 (float): Moles of Fe2O3 in the melt.
+        feo (float): Moles of FeO in the melt.
+        oxides (dict): Moles of non-iron species in the melt. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
+        T (float): Temperature of the melt, in units of 'K'.
+        P (float): Pressure in the melt, in units of 'Pa'.
 
-    Returns
-    -------
-    log10_fO2 : float
-        Logarithm (base 10) of the oxygen fugacity of the FQM buffer.
+    Returns:
+        constants (tuple, floats): KC91 parameterisation constants.
+
     """
     # empirical constants
-    a, b, c, e, f, g, h = 0.196, 1.1492e4, -6.675, -3.36, -7.01e-7, \
-                          -1.54e-10, 3.85e-17
+    a, b, c, e, f, g, h = 0.196, 1.1492e4, -6.675, -3.36, -7.01e-7, -1.54e-10, 3.85e-17
     T_0 = 1673  # [K]
-    d = {'Al2O3': -2.243, 'CaO': 3.201, 'Fe2O3': -1.828, 'FeO': -1.828,
-         'K2O': 6.215, 'Na2O': 5.854}
+    d = {
+        'Al2O3': -2.243,
+        'CaO': 3.201, 
+        'Fe2O3': -1.828, 
+        'FeO': -1.828,
+        'K2O': 6.215, 
+        'Na2O': 5.854
+    }
 
     # total moles in the melt, must be anhydrous
     N_melt = fe2o3 + feo + float(np.sum(list(oxides.values())))
@@ -753,42 +683,34 @@ def kc_consts(fe2o3, feo, oxides, T, P):
 # INITIAL CONDITIONS
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def atmos_ejection(n_atmos, m_imp, d_imp, vel_imp, angle=False, param=False,
-                   ocean_erosion=False, h2o_rat=None):
-    """
-    Calculates the atmospheric mass ejection as a result of the impact using
-    the precription of Kegerreis+ (2020b). Assumes an Earth-like target
+def atmos_ejection(
+    n_atmos: dict,
+    m_imp: float, 
+    d_imp: float, 
+    vel_imp: float, 
+    angle: Optional[bool] = False, 
+    param: Optional[bool] = False, 
+    ocean_erosion: Optional[bool] = False, 
+    h2o_rat: Optional[float] = None,
+) -> Tuple[float, dict]:
+    """Calculate the atmospheric mass ejection as a result of the impact. 
+    
+    Uses the precription of Kegerreis+ (2020b). Assumes an Earth-like target.
 
-    Parameters
-    ----------
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
-    m_imp : float [kg]
-        Mass of the impactor.
-    d_imp : float [km]
-        Radius of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity
-    angle : float [deg]
-        Impact angle (can alternatively provide impact parameter 'param').
-    param : float
-        Impact parameter (can alternatively provide impact angle).
-    ocean_erosion : bool
-        Dictates whether the effects of the ocean are taken into consideration
-        in atospheric erosion, in line with Genda and Abe (2005)
-    h2o_rat : float
-        The mass ratio of the atmospheric H2O to the oceanic H2O on the target.
+    Args:
+        n_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
+        m_imp (float): Mass of the impactor, in units of 'kg'.
+        d_imp (float): Radius of the impactor, in units of 'km'.
+        vel_imp (float): Impact velocity, in units of 'km s-1'.
+        angle (optional, float): Impact angle, in units of degrees. Can alternatively provide 'param'.
+        param (optional, float): Impact parameter. Can alternatively provide 'angle'.
+        ocean_erosion (optional, bool): Dictates whether the effects of the ocean are taken into consideration in atospheric erosion, in line with Genda and Abe (2005). If 'True', must also provide a value for 'h2o_rat'.
+        h2o_rat  (optional, float): The mass ratio of the atmospheric H2O to the oceanic H2O on the target.
 
-    Returns
-    -------
-    X : float
-        Mass fraction of the atmosphere which is removed.
-    n_kept : dict
-        Composition of the atmosphere remaining after ejection.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
+    Returns:
+        X (float): Mass fraction of the atmosphere which is removed.
+        n_kept (dict): Composition of the atmosphere remaining after ejection. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
+
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # Densities
@@ -824,8 +746,7 @@ def atmos_ejection(n_atmos, m_imp, d_imp, vel_imp, angle=False, param=False,
     vol_earth_cap = (np.pi / 3.) * (d ** 2.) * (3. * gC.r_earth - d)
 
     # interacting mass fraction
-    f = (rho_earth * vol_earth_cap + rho_imp * vol_imp_cap) / \
-        (rho_earth * vol_earth + rho_imp * vol_imp)
+    f = (rho_earth * vol_earth_cap + rho_imp * vol_imp_cap) / (rho_earth * vol_earth + rho_imp * vol_imp)
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # Calculate Atmosphere Mass Fraction Lost
@@ -833,8 +754,12 @@ def atmos_ejection(n_atmos, m_imp, d_imp, vel_imp, angle=False, param=False,
     v_esc = escape_velocity(m_imp, gC.m_earth, r_imp, gC.r_earth)  # [km s-1]
 
     # Kegerreis+ (2020b) prescription
-    X = 0.64 * ((m_imp / gC.m_earth)**0.5 * (rho_imp / rho_earth)**0.5 *
-                (vel_imp / v_esc)**2. * f) ** 0.65
+    X = 0.64 * (
+        (m_imp / gC.m_earth)**0.5 * 
+        (rho_imp / rho_earth)**0.5 *
+        (vel_imp / v_esc)**2. * 
+        f
+    ) ** 0.65
 
     # print("\nAtmos Fraction Removed (No Ocean Effect) = %.2f %%" % (X * 100.))
 
@@ -852,7 +777,7 @@ def atmos_ejection(n_atmos, m_imp, d_imp, vel_imp, angle=False, param=False,
         X_percent = slope * np.log10(h2o_rat) + intercept
         X = X_percent / 100.
 
-        print("\nAtmos Fraction Removed (+ Ocean Effect) = %.2e" % X)
+        print(f"\nAtmos Fraction Removed (+ Ocean Effect) = {X:.2e}")
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # Remove Atmosphere Moles
@@ -868,66 +793,51 @@ def atmos_ejection(n_atmos, m_imp, d_imp, vel_imp, angle=False, param=False,
     return [X, n_kept]
 
 
-def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
-               sys_id, imp_comp='E', display=False):
-    """
-    Predict the partial pressures and moles of H2, H2O, CO2, and N2 in the
-    atmosphere after impact.
-        - from the given partial pressures, we calculate the moles of each
-        species in the atmosphere
-        - we then carry out atmospheric erosion by mass ejection by the
-        impactor, using the prescription of Kegerreis+ (2020b)
-        - the impactor then vaporises the surface oceans, and is able to reduce
-        some/all of this H2O to H2 using the iron in its core
-        - FastChem is then used to find the equilibrium composition of such an
-        atmosphere
+def atmos_init(
+    mass_imp: float, 
+    vel_imp: float, 
+    init_ocean: float, 
+    p_atmos: dict,
+    temp: float, 
+    fe_frac: float,
+    sys_id: str, 
+    imp_comp: Optional[str] = 'E', 
+    display: Optional[bool] = False,
+) -> Tuple[dict, dict, list, list]:
+    """Calculate atmospheric composition after initial impact processes. 
 
-    Parameters
-    ----------
-    mass_imp : float [kg]
-        Mass of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity.
-    init_ocean : float [Earth Oceans]
-        Initial amount of water on the planet receiving impact.
-    p_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [bar].
-    temp : float [K]
-        Temperature of the atmosphere before impact.
-    fe_frac : float
-        Fraction of the impactor's iron inventory which is available to
-        reduce the vaporised steam oceans.
-    sys_id : str
-        Label of the atmosphere-magma system ('system_id'), used as file names
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
+    Predict the partial pressures and moles of H2, H2O, CO2, and N2 in the atmosphere after impact.
+        - from the given partial pressures, we calculate the moles of each species in the atmosphere
+        - we then carry out atmospheric erosion by mass ejection by the impactor, using the prescription of Kegerreis+ (2020b)
+        - the impactor then vaporises the surface oceans, and is able to reduce some/all of this H2O to H2 using the iron in its core
+        - FastChem is then used to find the equilibrium composition of such an atmosphere
 
-    Returns
-    -------
-    p_atmos (updated)
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
-    p_list : list
-        Partial pressure dictionaries at each stage of the calculations.
-        [initial, erosion, ocean vaporisation, impactor vaporisation,
-    n_list : list
-        Moles dictionaries at each stage of the calculations.
+    Args:
+        mass_imp (float): Mass of the impactor, in units of 'kg'.
+        vel_imp (float): Impact velocity, in units of 'km s-1'.
+        init_ocean (float): Initial amount of water on the planet receiving impact, in units of Earth Oceans.
+        p_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of each species, in units of 'bar'.
+        temp (float): Temperature of the atmosphere before impact, in units of 'K'.
+        fe_frac (float): Fraction of the impactor's iron inventory which is available to reduce the vaporised steam oceans.
+        sys_id (str): Label of the atmosphere-melt system ('system_id'), used as file names
+        imp_comp (optional, str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite,  'F': iron meteorite)
+        display (optional, bool): Whether to print out results tables during calculations.
+
+    Returns:
+        p_atmos (dict): Update of input parameter 'p_atmos'.
+        n_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
+        p_list (list):  Partial pressure dictionaries at each stage of the calculations, [initial, erosion, ocean vaporisation, impactor vaporisation, chemical equilibrium].
+        n_list (list):  Molar composition dictionaries at each stage of the calculations, [initial, erosion, ocean vaporisation, impactor vaporisation, chemical equilibrium].
 
     """
     p_init = dcop(p_atmos)  # initial input atmosphere
     if display:
         print("\n--- --- --- --- ---")
-        print("%20s : %.2e kg" % ('Mass of Impactor', mass_imp))
-        print("%20s : %.2f km/s" % ('Velocity of Impact', vel_imp))
-        print("%20s : %.2f EO" % ('Vaporised Oceans', init_ocean))
-        print("%20s : %.2f bar" % ('pCO2', p_init['CO2']))
-        print("%20s : %.2f bar" % ('pN2', p_init['N2']))
+        print(f"{'Mass of Impactor':20s} : {mass_imp:.2e} kg")
+        print(f"{'Velocity of Impact':20s} : {vel_imp:.2f} km/s")
+        print(f"{'Vaporised Oceans':20s} : {init_ocean:.2f} EO")
+        print(f"{'pCO2':20s} : {p_init['CO2']:.2f} bar")
+        print(f"{'pN2':20s} : {p_init['N2']:.2f} bar")
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # pre-impact atmosphere
@@ -972,19 +882,26 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         table_list = []
         p_tot = np.sum(list(p_atmos.values()))
         for mol in list(p_atmos.keys()):
-            table_list.append([mol, p_atmos[mol] / p_tot,
-                               p_atmos[mol] * 1e-5, n_atmos[mol]])
+            table_list.append([
+                mol, 
+                p_atmos[mol] / p_tot,
+                p_atmos[mol] * 1e-5, 
+                n_atmos[mol]
+            ])
         print('\n')
         print('\x1b[1;34m*** Initial Atmosphere ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl', headers=['Species',
-                        'Mixing Ratio', 'Partial /bar', 'Moles'],
-                        floatfmt=("", ".5f", ".2f", ".2e")))
-        print('\n>>> Total Atmos Mass : %.2e' % m_atm)
+        print(tabulate(
+            table_list, 
+            tablefmt='orgtbl', 
+            headers=['Species', 'Mixing Ratio', 'Partial /bar', 'Moles'],
+            floatfmt=("", ".5f", ".2f", ".2e")
+        ))
+        print(f"\n>>> Total Atmos Mass : {m_atm:.2e} kg")
 
     # relative mass of ocean and atmosphere
     r_mass = m_atm / (1.37e21 * init_ocean)  # [kg]
 
-    # print(">>> Atmos/Ocean : %.2e" % r_mass)
+    # print(f">>> Atmos/Ocean : {r_mass:.2e}")
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # atmospheric erosion by the impact
@@ -992,8 +909,14 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     # impactor diameter [km]
     d_imp = impactor_diameter(mass_imp, imp_comp)
 
-    [X_ejec, n_atmos] = atmos_ejection(n_atmos, mass_imp, d_imp, vel_imp,
-                                       param=0.7, h2o_rat=r_mass)
+    [X_ejec, n_atmos] = atmos_ejection(
+        n_atmos, 
+        mass_imp, 
+        d_imp, 
+        vel_imp,
+        param=0.7,
+        h2o_rat=r_mass
+    )
 
     # recalculate pressures
     [p_atmos, _] = update_pressures(n_atmos)
@@ -1004,14 +927,19 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         table_list = []
         p_tot = np.sum(list(p_atmos.values()))
         for mol in list(p_atmos.keys()):
-            table_list.append([mol, p_atmos[mol] / p_tot,
-                               p_atmos[mol] * 1e-5, n_atmos[mol]])
+            table_list.append([
+                mol, p_atmos[mol] / p_tot,
+                p_atmos[mol] * 1e-5, n_atmos[mol]
+            ])
         print('\n')
         print('\x1b[1;33m*** After Erosion ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl', headers=['Species',
-                        'Mixing Ratio', 'Partial /bar', 'Moles'],
-                        floatfmt=("", ".5f", ".2f", ".2e")))
-        print('\n>>> Mass fraction of atmosphere removed : %.3f' % X_ejec)
+        print(tabulate(
+            table_list, 
+            tablefmt='orgtbl', 
+            headers=['Species', 'Mixing Ratio', 'Partial /bar', 'Moles'],
+            floatfmt=("", ".5f", ".2f", ".2e")
+        ))
+        print(f"\n>>> Mass fraction of atmosphere removed : {X_ejec:.3f}")
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # impactor vaporisation of volatiles
@@ -1029,20 +957,26 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     p_degas, n_degas = dcop(p_atmos), dcop(n_atmos)
 
     if display:
-        print('\n>>> Impactor Type : ' + imp_comp)
-        print('>>> %.20s : %.2e\n' % ('Moles of H2O Added', h2o_degas))
+        print(f"\n>>> Impactor Type : {imp_comp}")
+        print(f">>> {'Moles of H2O Added':20s} : {h2o_degas:.2e}\n")
 
         table_list = []
         p_tot = np.sum(list(p_atmos.values()))
         for mol in list(p_atmos.keys()):
-            table_list.append([mol, p_atmos[mol] / p_tot,
-                               p_atmos[mol] * 1e-5, n_atmos[mol]])
+            table_list.append([
+                mol,
+                p_atmos[mol] / p_tot,
+                p_atmos[mol] * 1e-5,
+                n_atmos[mol]
+            ])
 
         print('\x1b[1;34m*** After Volatiles from Mantles ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl',
-                       headers=['Species', 'Mixing Ratio', 'Partial /bar',
-                                'Moles'],
-                       floatfmt=("", ".5f", ".2f", ".2e")))
+        print(tabulate(
+            table_list, 
+            tablefmt='orgtbl',
+            headers=['Species', 'Mixing Ratio', 'Partial /bar', 'Moles'],
+            floatfmt=("", ".5f", ".2f", ".2e")
+        ))
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # injection of H2O and H2 into the atmosphere (vaporisation and reducing)
@@ -1053,7 +987,7 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     init_h2o = init_ocean * EO_moles  # [moles]
 
     if display:
-        print("\n>>>Iron fraction available to reduce oceans = %.3f" % fe_frac)
+        print(f"\n>>>Iron fraction available to reduce oceans = {fe_frac:.3f}")
 
     # wt% of impactor mass is iron used to reduce oceans
     # Fe + H2O --> FeO + H2
@@ -1061,11 +995,11 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     init_reduce_moles = init_reduce_mass / gC.common_mol_mass['Fe']  # [moles]
 
     if init_reduce_moles > init_h2o + n_atmos['CO2']:
-        print("More Fe than H2O + CO2 for impactor mass = %.2e." % mass_imp)
+        print("More Fe than H2O + CO2 for impactor mass = {mass_imp:.2e} kg")
         sys.exit()
 
     if init_reduce_moles > init_h2o:
-        print("More Fe than H2O for impactor mass = %.2e." % mass_imp)
+        print("More Fe than H2O for impactor mass = {mass_imp:.2e} kg")
         sys.exit()
     else:
         # add H2O into the atmosphere
@@ -1089,13 +1023,22 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
         table_list = []
         p_tot = np.sum(list(p_atmos.values()))
         for mol in list(p_atmos.keys()):
-            table_list.append([mol, p_atmos[mol] / p_tot,
-                               p_atmos[mol] * 1e-5, n_atmos[mol]])
+            table_list.append([
+                mol, 
+                p_atmos[mol] / p_tot,
+                p_atmos[mol] * 1e-5, 
+                n_atmos[mol]
+            ])
         print('\n')
         print('\x1b[1;32m*** After Ocean Vaporisation & Iron Reduction ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl', headers=['Species',
-                        'Mixing Ratio', 'Partial /bar', 'Moles'],
-                        floatfmt=("", ".5f", ".2f", ".2e")))
+        print(tabulate(
+            table_list,
+            tablefmt='orgtbl',
+            headers=['Species', 'Mixing Ratio', 'Partial /bar', 'Moles'],
+            floatfmt=("", ".5f", ".2f", ".2e")
+        ))
+
+    # print(f"\n>>> log(fO2) of the atmosphere: {fo2_atm(n_atmos['H2'], n_atmos['H2O'], temp)}")
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # FastChem Equilibrium Calculations
@@ -1106,8 +1049,12 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     abund = calc_elem_abund(n_atmos)
 
     # prepare FastChem config files
-    write_fastchem(dir_path + '/data/FastChem/' + sys_id, abund,
-                   temp, float(np.sum(list(p_atmos.values()))))
+    write_fastchem(
+        f"{dir_path}/data/FastChem/{sys_id}", 
+        abund,
+        temp, 
+        float(np.sum(list(p_atmos.values())))
+    )
 
     # run automated FastChem
     run_fastchem_files(sys_id)
@@ -1126,77 +1073,73 @@ def atmos_init(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
 
             if mol in list(pre_fc.keys()):
                 if mr > 1e-5:
-                    table_list.append([mol,
-                                       p_atmos[mol] / p_tot,
-                                       p_atmos[mol] * 1e-5, n_atmos[mol],
-                                       pre_fc[mol]])
+                    table_list.append([
+                        mol,
+                        p_atmos[mol] / p_tot,
+                        p_atmos[mol] * 1e-5, 
+                        n_atmos[mol],
+                        pre_fc[mol]
+                    ])
             elif mol not in list(pre_fc.keys()):
                 if mr > 1e-5:
-                    table_list.append([mol,
-                                       p_atmos[mol] / p_tot,
-                                       p_atmos[mol] * 1e-5, n_atmos[mol],
-                                       0.])
+                    table_list.append([
+                        mol,
+                        p_atmos[mol] / p_tot,
+                        p_atmos[mol] * 1e-5, 
+                        n_atmos[mol],
+                        0.
+                    ])
 
         print('\n')
         print('\x1b[1;31m*** After FastChem ***\x1b[0m')
-        print(tabulate(table_list, tablefmt='orgtbl',
-                       headers=['Species', 'Mixing Ratio', 'Partial /bar',
-                                'Moles', 'Moles (pre)'],
-                       floatfmt=("", ".5f", ".2f", ".2e", ".2e")))
-        print('\n>>> Total atmospheric pressure : %.2f' %
-              (1e-5 * np.sum(list(p_atmos.values()))))
+        print(tabulate(
+            table_list, 
+            tablefmt='orgtbl',
+            headers=['Species', 'Mixing Ratio', 'Partial /bar', 'Moles', 'Moles (pre)'],
+            floatfmt=("", ".5f", ".2f", ".2e", ".2e")
+        ))
 
-    return p_atmos, n_atmos, [p_init, p_erosion, p_degas, p_ocean, p_chem],\
-           [n_init, n_erosion, n_degas, n_ocean, n_chem]
+        print(f"\n>>> Total atmospheric pressure : {1e-5 * np.sum(list(p_atmos.values())):.2f}")
+
+    return p_atmos, n_atmos, [p_init, p_erosion, p_degas, p_ocean, p_chem], [n_init, n_erosion, n_degas, n_ocean, n_chem]
 
 
-def available_iron(m_imp, vel_imp, angle, imp_comp, max_hse=False):
-    """
-    Determines how much of the iron from the impactor core is made available to
-    the atmosphere for the reduction of the vaporised surface oceans.
+def available_iron(
+    m_imp: float, 
+    vel_imp: float, 
+    angle: float, 
+    imp_comp: str, 
+    max_hse: Optional[bool] = False,
+) -> Tuple[float, float, float]:
+    """Determine where iron from the impactor ends up within the target.
 
-    NOTE: interpolation is only carried out as a function of impactor mass. In
-    this version of the code, therefore, impact velocity and angles must be one
-    of the modelled values (see exceptions).
+    How much of the iron from the impactor core is made available to the atmosphere for the reduction of the vaporised surface oceans?
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Mass of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity.
-    angle : float [deg]
-        Impact angle.
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
-    max_hse : bool
-        Determines whether the maximum HSE impactor is calculated and displayed,
-        as calculated from the iron distribution (i.e., scaled from 2e22 kg
-        (Bottke+, 2010) by iron escaping the system).
+    NOTE: interpolation is only carried out as a function of impactor mass. In this version of the code, therefore, impact velocity and angles must be one of the modelled values (see exceptions).
 
-    Returns
-    -------
-    X_atm_out : float
-        Fraction of impactor iron accreted by the target atmosphere.
-    X_int_out : float
-        Fraction of impactor iron accreted by the target interior.
-    X_ej_out : float
-        Fraction of the impactor iron not accreted by the target.
+    Args: 
+        m_imp (float): Mass of the impactor, in units of 'kg'.
+        vel_imp (float): Impact velocity, in units of 'km s-1'.
+        angle (float): Impact angle, in units of degrees.
+        imp_comp (str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite, 'F': iron meteorite)
+        max_hse (optional, bool): Whether the maximum HSE impactor is calculated and displayed, as calculated from the iron distribution (i.e., scaled from 2e22 kg (Bottke+, 2010) by iron escaping the system).
+
+    Returns:
+        X_atm_out (float): Fraction of impactor iron accreted by the target atmosphere.
+        X_int_out (float): Fraction of impactor iron accreted by the target interior.
+        X_ej_out (float): Fraction of the impactor iron not accreted by the target.
+
     """
     # --- Checks --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --
     if angle not in [0., 30., 45., 60.]:
-        print(">>> Given impact angle not simulated for iron distribution."
-              " Must be one of [0, 30, 45, 60] degrees.")
+        print(">>> Given impact angle not simulated for iron distribution. Must be one of [0, 30, 45, 60] degrees.")
         sys.exit()
 
     r_imp = 1e3 * 0.5 * impactor_diameter(m_imp, imp_comp)  # [m]
     v_esc = escape_velocity(gC.m_earth, m_imp, gC.r_earth, r_imp)  # [km s-1]
 
     if vel_imp / v_esc not in [1.1, 1.5, 2.0]:
-        print(">>> Given impact velocity not simulated for iron distribution."
-              " Must be one of [1.1, 1.5, 2.0] v_esc.")
+        print(">>> Given impact velocity not simulated for iron distribution. Must be one of [1.1, 1.5, 2.0] v_esc.")
         sys.exit()
 
     # --- Import Data --- --- --- --- --- --- --- --- --- --- --- --- --- --- -
@@ -1205,7 +1148,7 @@ def available_iron(m_imp, vel_imp, angle, imp_comp, max_hse=False):
 
     impact_m_earth = 5.9127e+24
 
-    with open(dir_path + '/data/iron_distributions.txt', 'r') as file:
+    with open(f"{dir_path}/data/iron_distributions.txt", "r") as file:
         count = -1
         for line in file:
             count += 1
@@ -1256,54 +1199,51 @@ def available_iron(m_imp, vel_imp, angle, imp_comp, max_hse=False):
     if max_hse:
         # function to minimise
         def fe_accrete(m_imp, ejected):
-            X_ejec_hse = (ejected[0] * m_imp ** 2) + \
-                         (ejected[1] * m_imp) + ejected[2]
+            X_ejec_hse = (ejected[0] * m_imp ** 2) + (ejected[1] * m_imp) + ejected[2]
             X_ejec_hse = max(0., X_ejec_hse)
 
             return np.abs((1. - X_ejec_hse) * m_imp - 2e22)
 
-        output = opt.minimize_scalar(fe_accrete, args=fit_ejec, tol=1e-5,
-                                     method='bounded', bounds=[2e21, 1e23])
-        print(">>> Maximum HSE Impactor = %.3e kg" % output.x)
+        output = opt.minimize_scalar(
+            fe_accrete, 
+            args=fit_ejec, 
+            tol=1e-5,
+            method='bounded', 
+            bounds=[2e21, 1e23]
+        )
+        print(f">>> Maximum HSE Impactor = {output.x:.3e} kg")
 
     return X_atm_out, X_int_out, X_ej_out
 
 
-def basalt_comp_by_fo2(m_melt, buffer, relative, init_comp, H2O_init, P, T):
-    """
-    Varies the composition of a given basaltic melt phase such that the oxygen
-    fugacity is the input value relative to the input mineral buffer,
+def basalt_comp_by_fo2(
+    m_melt: float, 
+    buffer: str, 
+    relative: float, 
+    init_comp: dict, 
+    H2O_init: float, 
+    P: float, 
+    T: float,
+) -> dict:
+    """Create a basaltic melt with the given oxygen fugacity.
+    
+    Vary the composition of a given basaltic melt phase such that the oxygen fugacity is the input value relative to the input mineral buffer,
 
-    Parameters
-    ----------
-    m_melt : float [kg]
-        Mass of the melt phase.
-    buffer : str
-        Mineral buffer against which we are measuring fO2.
-        (possible values: 'IW', 'FMQ')
-    relative : float
-        Log units of fO2 above/below the stated mineral buffer.
-    init_comp: dict
-        Initial composition of the melt phase.
-        (Keys) strings of each molecule.
-        (Values) wt% of each molecule.
-    H2O_init : float [wt%]
-        Initial water content of the magma melt phase.
-    P : float [Pa]
-        System pressure.
-    T : float [K]
-        System temperature.
+    Args: 
+        m_elt (float): Mass of the melt phase, in units of 'kg'.
+        buffer (str): Mineral buffer against which we are measuring fO2 (possible values: 'IW', 'FMQ').
+        relative (float): Log units of fO2 above/below the stated mineral buffer.
+        init_comp (dict): Initial composition of the melt phase. (Keys) strings of each molecule. (Values) wt% of each molecule.
+        H2O_init (float): Initial water content of the melt melt phase, in units of 'wt%'.
+        P (float): System pressure, in units of 'Pa'.
+        T (float): System temperature, in units of 'K'.
 
-    Returns
-    -------
-    n : dict
-        Composition of the melt phase at the desired fO2.
-        (Keys) strings of each molecule.
-        (Values) moles of each molecule.
+    Returns:
+        n (dict): Composition of the melt phase at the desired fO2. (Keys) strings of each molecule. (Values) moles of each molecule.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # add 'H2O_init' wt% H2O to the magma and scale old wt%
+    # add 'H2O_init' wt% H2O to the melt and scale old wt%
     wt = {'H2O': H2O_init}
     for mol in list(init_comp.keys()):
         if mol != 'H2O':
@@ -1334,9 +1274,7 @@ def basalt_comp_by_fo2(m_melt, buffer, relative, init_comp, H2O_init, P, T):
     # oxygen fugacity we want to achieve
     if buffer.lower() == 'iw':
         if relative <= -2.:
-            print(">>> Code not set up to start with metal-saturated "
-                  "impact-generate melt. Please start with melt fO2 > "
-                  "IW - 2.")
+            print(">>> Code not set up to start with metal-saturated impact-generate melt. Please start with melt fO2 > IW - 2.")
             sys.exit()
         else:
             comp_fO2 = fo2_iw(T, P) + relative
@@ -1412,32 +1350,28 @@ def basalt_comp_by_fo2(m_melt, buffer, relative, init_comp, H2O_init, P, T):
         sys.exit()
 
 
-def peridotite_comp_by_fe_ratio(m_melt, ratio, init_comp, H2O_init):
-    """
-    Varies the composition of a given melt phase such that the ferric-to-iron
-    ratio is the desired value.
+def peridotite_comp_by_fe_ratio(
+    m_melt: float, 
+    ratio: float, 
+    init_comp: dict, 
+    H2O_init: float,
+) -> dict:
+    """Create a peridotitic melt with the given oxygen fugacity.
 
-    Parameters
-    ----------
-    m_melt : float [kg]
-        Mass of the melt phase.
-    ratio : float
-        Molar ratio of Fe2O3 to total Fe in melt phase (usually Fe2O3 + FeO).
-    init_comp: dict
-        Initial composition of the melt phase.
-        (Keys) strings of each molecule.
-        (Values) wt% of each molecule.
-    H2O_init : float [wt%]
-        Initial water content of the magma melt phase.
-    Returns
-    -------
-    n : dict
-        Composition of the melt phase at the desired fO2.
-        (Keys) strings of each molecule.
-        (Values) moles of each molecule.
+    Varies the composition of a given melt phase such that the ferric-to-iron ratio is the desired value.
+
+    Ars:
+        m_melt (float): Mass of the melt phase, in units of 'kg'.
+        ratio (float): Molar ratio of Fe2O3 to total Fe in melt phase (usually Fe2O3 + FeO).
+        init_comp (dict): Initial composition of the melt phase. (Keys) strings of each molecule. (Values) wt% of each molecule.
+        H2O_init (float): Initial water content of the melt melt phase, in units of 'wt%'.
+
+    Returns:
+        n (dict): Composition of the melt phase at the desired fO2. (Keys) strings of each molecule. (Values) moles of each molecule.
+
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    # add 'H2O_init' wt% H2O to the magma and scale old wt%
+    # add 'H2O_init' wt% H2O to the melt and scale old wt%
     wt = {'H2O': H2O_init}
     for mol in list(init_comp.keys()):
         if mol != 'H2O':
@@ -1463,25 +1397,17 @@ def peridotite_comp_by_fe_ratio(m_melt, ratio, init_comp, H2O_init):
     return n
 
 
-def impactor_diameter(m_imp, imp_comp):
-    """
-    Calculates the diameter of the impactor based on its mass, with an iron
-    core and silicate mantle determined by the given impactor composition. The
-    core, and the body as a whole, are assumed to be spherical.
+def impactor_diameter(m_imp: float, imp_comp: str) -> float:
+    """Calculate impactor diameter from its mass.
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Mass of impactor.
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
+    An iron core and silicate mantle are determined by the given impactor composition. The core, and the body as a whole, are assumed to be spherical.
 
-    Returns
-    -------
-    d_imp : float [km]
-        Diameter of impactor.
+    Args:
+        m_imp (float): Mass of impactor, in units of 'kg'.
+        imp_comp (str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite, 'F': iron meteorite)
+
+    Returns:
+        d_imp (float): Diameter of impactor, in units of 'km'.
 
     """
     # check composition in mass fractions --- --- --- --- --- --- --- --- ---
@@ -1500,24 +1426,18 @@ def impactor_diameter(m_imp, imp_comp):
     return 2. * r_imp * 1e-3
 
 
-def impact_melt_mass(m_imp, vel_imp, angle):
-    """
-    Calculate the mass of the silicate melt phase generated in a given impact.
+def impact_melt_mass(m_imp: float, vel_imp: float, angle: float) -> float:
+    """Calculate the mass of silicate melt phase generated in a given impact.
+    
     Interpolation is carried as a function of modified specific impact energy.
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Mass of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity.
-    angle : float [deg]
-        Impact angle.
+    Args:
+        m_imp (float): Mass of the impactor, in units of 'kg'.
+        vel_imp (float): Impact velocity, in units of 'km s-1'.
+        angle (float): Impact angle, in units of degrees.
 
-    Returns
-    ----------
-    m_melt_out : float [kg]
-        Mass of impact-generated silicate melt phase.
+    Returns:
+        m_melt_out (float): Mass of impact-generated silicate melt phase, in units of 'kg'.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -1532,7 +1452,7 @@ def impact_melt_mass(m_imp, vel_imp, angle):
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     q_s_interp, mass_interp = [], []
 
-    with open(dir_path + '/data/melt_masses.txt', 'r') as csvfile:
+    with open(f"{dir_path}/data/melt_masses.txt", "r") as csvfile:
         data = csv.reader(csvfile, delimiter=',')
         next(data, None)
         next(data, None)
@@ -1546,7 +1466,7 @@ def impact_melt_mass(m_imp, vel_imp, angle):
             m_t, m_i = float(row[1]), float(row[2])
             # target and impactor radii
             r_t = 0.5 * 1e3 * impactor_diameter(m_t, 'E')
-            r_i = 0.5 * 1e3 * impactor_diameter(m_t, 'E')
+            r_i = 0.5 * 1e3 * impactor_diameter(m_i, 'E')
             # mutual escape velocity
             v_esc = escape_velocity(m_t, m_i, r_t, r_i)
             # impact velocity
@@ -1582,32 +1502,29 @@ def impact_melt_mass(m_imp, vel_imp, angle):
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # INTERPOLATION USING INPUT VALUES
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    [Q_S_in, _] = specific_energy(gC.m_earth, m_imp, vel_imp,
-                                  np.sin(np.pi * angle / 180.))
+    [Q_S_in, _] = specific_energy(
+        gC.m_earth, 
+        m_imp, 
+        vel_imp,
+        np.sin(np.pi * angle / 180.)
+    )
 
     m_melt_out = 10. ** (fit[0] * np.log10(Q_S_in) + fit[1])
 
     return m_melt_out
 
 
-def vaporisation(m_imp, imp_comp):
+def vaporisation(m_imp: float, imp_comp: str) -> float:
     """
     Calculates the amount of water vapour degassed from the impactor's rocky
     mantle.
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Impactor mass.
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
+    Args:
+        m_imp (float): Impactor mass, in units of 'kg'.
+        imp_comp (str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite, 'F': iron meteorite)
 
-    Returns
-    -------
-    n_h2o : float [moles]
-        Amount of degassed water vapour.
+    Returns:
+        n_h2o (float): Moles of degassed water vapour.
 
     """
     types = ['C', 'L', 'H', 'E', 'F']
@@ -1626,33 +1543,26 @@ def vaporisation(m_imp, imp_comp):
 # REDOX CALCULATIONS
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def add_iron_to_basalt(n_fe, n_mo, T, P, tol):
-    """
-    Add iron from the impactor core which did not interact with the atmosphere
-    into the melt phase, and equilibrate.
+def add_iron_to_basalt(
+    n_fe: float, 
+    n_mo: dict, 
+    T: float, 
+    P: float, 
+    tol: float,
+) -> Tuple[dict, float, float]:
+    """Add iron from the impactor core which did not interact with the atmosphere into the melt phase, and equilibrate.
 
-    Parameters
-    ----------
-    n_fe : float [moles]
-        Amount of iron leftover from the impactor that is to be sequesterd
-        into the mantle.
-    n_mo : dict
-        Composition of the bulk magma ocean silicate melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of each species in melt.
-    T: float [K]
-        Temperature of the system.
-    P : float [Pa]
-        Total pressure of the system.
-    tol : float
-        Tolerance on amount of Fe designated as 'zero'.
+    Args: 
+        n_fe (float): Moles of iron leftover from the impactor that is to be sequesterd into the mantle.
+        n_mo (dict): Composition of the bulk magma ocean silicate melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of each species in melt.
+        T (float): Temperature of the system, in units of 'K'.
+        P (float): Total pressure of the system, in units of 'Pa'.
+        tol (float): Tolerance on moles of Fe designated as 'zero'.
 
-    Returns
-    -------
-    n_mo_new : dict
-        New composition of the bulk magma ocean silicate melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of each species in melt.
+    Returns:
+        n_mo_new (dict): New composition of the bulk magma ocean silicate melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of each species in melt.
+        Fe (float): Moles of metallic iron leftover after equilibration.
+        m_melt (float): Mass of the melt phase after equilibration.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -1781,33 +1691,26 @@ def add_iron_to_basalt(n_fe, n_mo, T, P, tol):
     return dcop(n_melt_out), Fe, m_melt
 
 
-def add_iron_to_peridotite(n_fe, n_mo, T, P, tol):
-    """
-    Add iron from the impactor core which did not interact with the atmosphere
-    into the melt phase, and equilibrate.
+def add_iron_to_peridotite(
+    n_fe: float, 
+    n_mo: dict, 
+    T: float, 
+    P: float, 
+    tol: float,
+) -> Tuple[dict, float, float]:
+    """Add iron from the impactor core which did not interact with the atmosphere into the melt phase, and equilibrate.
 
-    Parameters
-    ----------
-    n_fe : float [moles]
-        Amount of iron leftover from the impactor that is to be sequesterd
-        into the mantle.
-    n_mo : dict
-        Composition of the bulk magma ocean silicate melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of each species in melt.
-    T: float [K]
-        Temperature of the system.
-    P : float [Pa]
-        Total pressure of the system.
-    tol : float
-        Tolerance on amount of Fe designated as 'zero'.
+    Args:
+        n_fe (float): Moles of iron leftover from the impactor that is to be sequestered into the mantle.
+        n_mo (dict): Composition of the bulk magma ocean silicate melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of each species in melt.
+        T (float): Temperature of the system, in units of 'K'.
+        P (float): Total pressure of the system, in units of 'Pa'.
+        tol (float): Tolerance on amount of Fe designated as 'zero'.
 
-    Returns
-    -------
-    n_mo_new : dict
-        New composition of the bulk magma ocean silicate melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of each species in melt.
+    Returns:
+        n_mo_new (dict): New composition of the bulk magma ocean silicate melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of each species in melt.
+        Fe (float): Moles of metallic iron leftover after equilibration.
+        m_melt (float): Mass of the melt phase after equilibration.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -1936,49 +1839,45 @@ def add_iron_to_peridotite(n_fe, n_mo, T, P, tol):
     return dcop(n_melt_out), Fe, m_melt
 
 
-def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
-                    ch4, nh3, m_melt, tol):
-    """
-    Dissolve H2O into the magma. This will affect the fO2 of the atmosphere
-    but not the fO2 of the melt under the current prescription of KC91.
+def equilibrate_H2O(
+    fe2o3: float, 
+    feo: float, 
+    h2o_mag: float, 
+    h2: float, 
+    h2o_atm: float, 
+    oxides: dict, 
+    co2: float, 
+    n2: float, 
+    co: float,
+    ch4: float, 
+    nh3: float,
+    m_melt: float, 
+    tol: float
+):
+    """Dissolve H2O into the melt. 
+    
+    This will affect the fO2 of the atmosphere but not the fO2 of the melt under the current prescription of KC91.
 
-    Parameters
-    ----------
-    fe2o3 : float [moles]
-        Ferric iron in the melt phase.
-    feo : float [moles]
-        Ferrous iron in the melt phase.
-    h2o_mag : float [moles]
-        H2O in the melt phase (should not change in function).
-    h2 : float [moles]
-        H2 in the atmosphere.
-    h2o_atm : float [moles]
-        H2O in the atmosphere.
-    oxides : dict
-        Moles of non-iron species in the melt phase.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in melt.
-    co2 : float [moles]
-        CO2 in the atmosphere.
-    n2 : float [moles]
-        N2 in the atmosphere.
-    co : float [moles]
-        CO in the atmosphere.
-    ch4 : float [moles]
-        CH4 in the atmosphere.
-    nh3 : float [moles]
-        NH3 in the atmosphere.
-    m_melt : float [kg]
-        Mass of melt packet.
-    tol : float
-        Tolerance on fO2 convergence (absolute).
+    Args:
+        fe2o3 (float): Moles of ferric iron in the melt phase.
+        feo (float): Moles of ferrous iron in the melt phase.
+        h2o_mag (float): Moles of H2O in the melt phase.
+        h2 (float): Moles of H2 in the atmosphere.
+        h2o_atm (float): Moles of H2O in the atmosphere.
+        oxides (dict): Moles of non-iron species in the melt phase. Keys (str) full formulae of molecules. Values (float) number of moles of species in melt.
+        co2 (float): Moles of CO2 in the atmosphere.
+        n2 (float): Moles of N2 in the atmosphere.
+        co (float): Moles of CO in the atmosphere.
+        ch4 (float): Moles of CH4 in the atmosphere.
+        nh3 (float): Moles of NH3 in the atmosphere.
+        m_melt (float): Mass of melt packet, in units of 'kg'.
+        tol (float): Tolerance on fO2 convergence (absolute).
 
-    Returns
-    -------
-    h2o_atm
-    h2o_mag
-    m_melt
-
+    Returns:
+        h2o_atm (float): Moles of H2O in the atmosphere at equilibrium.
+        h2o_mag (float): Moles of H2O in the melt phase at equilibrium.
+        m_melt (float):  Mass of melt packet at equilibrium, in units of 'kg'.
+        
     """
     h2o_display = False
 
@@ -2015,9 +1914,11 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
                                    'N2': n2, 'CO': co, 'CH4': ch4, 'NH3': nh3})
 
         # mass fractions in melt packet
-        m_frac_old = dcop({'H2O': h2o_mag * gC.common_mol_mass['H2O'] / m_melt,
-                           'Fe2O3': fe2o3 * gC.common_mol_mass['Fe2O3'] / m_melt,
-                           'FeO': feo * gC.common_mol_mass['FeO'] / m_melt})
+        m_frac_old = dcop({
+            'H2O': h2o_mag * gC.common_mol_mass['H2O'] / m_melt,
+            'Fe2O3': fe2o3 * gC.common_mol_mass['Fe2O3'] / m_melt,
+            'FeO': feo * gC.common_mol_mass['FeO'] / m_melt
+        })
 
         for mol in list(oxides.keys()):  # non-iron oxides
             M = gC.common_mol_mass[mol]  # [kg.mol-1]
@@ -2039,19 +1940,17 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
                 m_frac_new[mol] = m_frac_old[mol] * m_melt / m_melt_new
 
         # moles of H2O dissolved into melt packet (can be negative)
-        d_H2O = modifier * ((m_melt_new * m_frac_H2O /
-                             gC.common_mol_mass['H2O']) - h2o_mag)
+        d_H2O = modifier * ((m_melt_new * m_frac_H2O / gC.common_mol_mass['H2O']) - h2o_mag)
 
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         # H2O is Outgassed from the Magma
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         if d_H2O < 0.:
-            # print(">>> H2O outgassed from the magma.")
+            # print(">>> H2O outgassed from the melt.")
 
-            # is there enough H2O in the magma to outgas 'd_H2O'?
+            # is there enough H2O in the melt to outgas 'd_H2O'?
             # YES, degas H2O into atmosphere --- --- ---
             if h2o_mag - np.abs(d_H2O) > tol:
-                # print("\x1b[1;36m(%2s) Outgassed\x1b[0m" % step)
                 h2o_mag -= np.abs(d_H2O)
                 h2o_atm += np.abs(d_H2O)
 
@@ -2072,20 +1971,18 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
                 modifier = modifier * 0.5
                 # return to start of while loop
                 fails += 1
-                # print("\x1b[0;33m Step : %1d , Fails : %1d \x1b[0m"
-                #       % (step, fails))
+
                 continue
 
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         # H2O is Drawn Down into the Magma
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         elif d_H2O > 0.:
-            # print(">>> H2O drawn down into the magma.")
+            # print(">>> H2O drawn down into the melt.")
 
             # is there enough H2O in the atmosphere to draw down 'd_H2O'?
-            # YES, dissolve H2O into magma --- --- ---
+            # YES, dissolve H2O into melt --- --- ---
             if h2o_atm - d_H2O > tol:
-                # print("\x1b[1;36m(%2s) Dissolved\x1b[0m" % step)
                 h2o_mag += d_H2O
                 h2o_atm -= d_H2O
 
@@ -2106,15 +2003,22 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
                 modifier = modifier * 0.5
                 # return to start of while loop
                 fails += 1
-                # print("\x1b[0;33m Step : %1d , Fails : %1d \x1b[0m"
-                #       % (step, fails))
+                
                 continue
 
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         # Test for completion
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-        [_, P] = update_pressures({'H2': h2, 'H2O': h2o_atm, 'CO2': co2,
-                                   'N2': n2, 'CO': co, 'CH4': ch4, 'NH3': nh3})
+        [_, P] = update_pressures({
+            'H2': h2, 
+            'H2O': h2o_atm, 
+            'CO2': co2,
+            'N2': n2, 
+            'CO': co, 
+            'CH4': ch4, 
+            'NH3': nh3
+        })
+
         N_atm = h2 + h2o_atm + co2 + n2 + co + ch4 + nh3
         p_H2O_atm = P * h2o_atm / N_atm
         XH2O = h2o_mag * gC.common_mol_mass['H2O'] / m_melt
@@ -2128,11 +2032,10 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
         if np.abs(p_H2O_atm - p_H2O_mag) < tol:
             if h2o_display:
                 print("\x1b[36;1m>>> H2O Partitioning \x1b[0m")
-                print(">>> H2O (melt) Molar Fraction : %.2e" % XH2O)
-                print(">>>           New pH2O (melt) : %.2e" % p_H2O_mag)
-                print(">>>          New pH2O (atmos) : %.2e" % p_H2O_atm)
-                print(">>>           Melt Phase Mass : %.2e\n" % m_melt)
-                # sys.exit()
+                print(f">>> H2O (melt) Molar Fraction : {XH2O:.2e}")
+                print(f">>>           New pH2O (melt) : {p_H2O_mag * 1e-5:.2f} bar")
+                print(f">>>          New pH2O (atmos) : {p_H2O_atm * 1e-5:.2f} bar")
+                print(f">>>           Melt Phase Mass : {m_melt:.2e}kg \n")
 
             return h2o_atm, h2o_mag, m_melt
         else:
@@ -2141,69 +2044,48 @@ def equilibrate_H2O(fe2o3, feo, h2o_mag, h2, h2o_atm, oxides, co2, n2, co,
             fails = 0
 
 
-def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
-                   H2O_init, buffer, rel_fO2, T, model_version, partition,
-                   chem, tol, sys_id):
-    """
-    Equilibrate the atmosphere with the melt phase.
+def eq_melt_basalt(
+    m_imp: float, 
+    v_imp: float, 
+    theta: float, 
+    imp_comp: str, 
+    N_oceans: float, 
+    init_atmos: dict, 
+    wt_mo: dict,
+    H2O_init: float, 
+    buffer: str, 
+    rel_fO2: float, 
+    T: float,
+    model_version: str, 
+    partition: bool,
+    chem: bool, 
+    tol: float, 
+    sys_id: str,
+):
+    """Equilibrate the atmosphere with a basaltic melt phase.
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Mass of impactor.
-    v_imp : float [km s-1]
-        Impact velocity.
-    theta : float [degrees]
-        Impact angle.
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
-    N_oceans : float [Earth Oceans]
-        Initial amount of water on the planet.
-    init_atmos : dict
-        Initial composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [bar].
-    wt_mo : dict
-        Composition of the body of magma.
-        Keys (str) full formulae of molecules.
-        Values (float) wt% of species in the body of magma.
-    H2O_init : float [wt%]
-        Initial water content of the magma melt phase.
-    buffer : str
-        Mineral buffer against which we are measuring fO2.
-        (possible values: 'IW', 'FMQ')
-    rel_fO2 : float
-        Log units of fO2 above/below the stated mineral buffer.
-    T : float [K]
-        Temperature.
+    Args:
+        m_imp (float): Mass of impactor, in units of 'kg'. 
+        v_imp (float): Impact velocity, in units of 'km s-1'.
+        theta (float): Impact angle, in units of degrees.
+        imp_comp (str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite, 'F': iron meteorite)
+        N_oceans (float): Initial amount of water on the planet, in units of Earth Oceans.
+        init_atmos (dict): Initial composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of each species [bar].
+        wt_mo (dict): Composition of the body of melt. Keys (str) full formulae of molecules. Values (float) wt% of species in the body of melt.
+        H2O_init (float): Initial water content of the melt phase, in units of 'wt%'.
+        buffer (str):  Mineral buffer against which we are measuring fO2 (e.g., 'IW', 'FMQ').
+        rel_fO2 (float): Log units of fO2 above/below the stated mineral buffer.
+        T (float): Temperature, in units of 'K'.
+        model_version (str): Which model version runs (e.g., 1A, 1B, 2, 3A, 3B).
+        partition (bool): Whether H2O dissolution/outgassing takes place.
+        chem (bool): Whether atmospheric chemistry takes place.
+        tol (float): Tolerance in the difference between the atmosphere and the melt fO2 at completion (i.e., fo2_atmos * (1 +/- tol) in relation to fO2_melt)
+        sys_id (str): Identifier for the system. Used in file labelling.
 
-    model_version : str
-        Dictates which model version runs (see paper Figure 1).
-    partition : bool
-        Dictates whether or not H2O dissolution/outgassing takes place.
-    chem : bool
-        Dictates whether or not atmospheric chemistry takes place.
-
-    tol : float
-        Tolerance in the difference between the atmosphere and the melt fO2
-        at completion (i.e. fo2_atmos * (1 +/- tol) in relation to fO2_melt)
-    sys_id : str
-        Identifier for the system. Used in FastChem file labelling.
-
-    Returns
-    -------
-    trackers : list
-        Lists of atmospheric abundances, fO2 & masses for the atmosphere and
-        melt phase, total atmospheric pressure, and iron abundances, for all
-        steps of the equilibration.
-    P_LIST : list
-        Composition of the atmosphere throughout the initial conditions
-        calculations. Each item in list is a dictionary similar to 'p_atmos'
-    N_LIST : list
-        Composition of the atmosphere throughout the initial conditions
-        calculations. Each item in list is a dictionary similar to 'n_atmos'
+    Returns:
+        trackers (list): Atmospheric abundances, fO2 & masses for the atmosphere and melt phase, total atmospheric pressure, and iron abundances, for all steps of the equilibration.
+        P_LIST (list): Composition of the atmosphere throughout the initial conditions calculations. Each item in list is a dictionary similar to 'p_atmos'
+        N_LIST (list): Composition of the atmosphere throughout the initial conditions calculations. Each item in list is a dictionary similar to 'n_atmos'
 
     """
     # --- Checks, Bools, and Trackers --- --- --- --- --- --- --- --- --- ---
@@ -2214,8 +2096,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
     # check for valid model version
     if model_version not in ['1A', '1B', '2', '3A', '3B']:
-        print("\x1b[1;31m>>> Model version not valid. Please select one of"
-              "[1A, 1B, 2, 3A, 3B].\x1b[0m")
+        print("\x1b[1;31m>>> Model version not valid. Please select one of [1A, 1B, 2, 3A, 3B].\x1b[0m")
         sys.exit()
 
     n_h2_track, n_h2o_atm_track = [], []
@@ -2228,8 +2109,12 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
     atm_moles_track, melt_moles_track = [], []
 
     # --- Iron Distribution --- --- --- --- --- --- --- --- --- --- --- --- --
-    [X_fe_atm, X_fe_int, X_fe_ejec] =\
-        available_iron(m_imp, v_imp, theta, imp_comp=imp_comp)
+    [X_fe_atm, X_fe_int, X_fe_ejec] = available_iron(
+        m_imp, 
+        v_imp, 
+        theta, 
+        imp_comp=imp_comp
+    )
 
     # fiducial model iron distribution
     if model_version in ['1A', '2']:
@@ -2242,14 +2127,22 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
         print(">>> ALL INTERIOR IRON DEPOSITED INTO MELT PHASE.")
 
     if display:
-        print(">>> Iron into the    atmosphere : %.5f" % X_fe_atm)
-        print(">>> Iron into the    interior   : %.5f" % X_fe_int)
-        print(">>> Iron not accreted by target : %.5f" % X_fe_ejec)
+        print(f">>> Iron into the atmosphere : {X_fe_atm:.5f}")
+        print(f">>> Iron into the interior : {X_fe_int:.5f}")
+        print(f">>> Iron not accreted by target : {X_fe_ejec:.5f}")
 
     # --- Initial Atmospheric Composition --- --- --- --- --- --- --- --- ---
-    [P_ATMOS_IC, N_ATMOS_IC, P_LIST, N_LIST] = \
-        atmos_init(m_imp, v_imp, N_oceans, init_atmos, T, X_fe_atm,
-                           sys_id=sys_id, imp_comp=imp_comp, display=display)
+    [P_ATMOS_IC, N_ATMOS_IC, P_LIST, N_LIST] = atmos_init(
+        m_imp, 
+        v_imp, 
+        N_oceans, 
+        init_atmos, 
+        T, 
+        X_fe_atm,
+        sys_id=sys_id, 
+        imp_comp=imp_comp, 
+        display=display
+    )
 
     # select which species to include going forward
     n_atmos = {}
@@ -2272,13 +2165,20 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
     fo2_atmos_og = dcop(fo2_atmos)
 
     # --- Initial Magma Composition --- --- --- --- --- --- --- --- --- --- ---
-    # mass of the magma [kg]
+    # mass of the melt [kg]
     m_mag = impact_melt_mass(m_imp, v_imp, 45.)
     m_melt_from_impact = dcop(m_mag)  # store melt phase mass for display
 
     # calculate moles from wt% prescription (includes adding H2O)
-    n_melt = basalt_comp_by_fo2(m_mag, buffer, rel_fO2, wt_mo, H2O_init,
-                                p_tot, T)
+    n_melt = basalt_comp_by_fo2(
+        m_mag, 
+        buffer, 
+        rel_fO2,
+        wt_mo, 
+        H2O_init,
+        p_tot, 
+        T
+    )
     n_melt_from_impact = dcop(n_melt)  # store melt phase for display
 
     if model_version in ['2', '3A', '3B']:
@@ -2290,8 +2190,14 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
         # add in metallic iron from the unoxidised impactor iron
         fe_melt = X_fe_int * fe_total
-        [n_melt, n_metal_bulk, m_mag] = \
-            add_iron_to_basalt(fe_melt, dcop(n_melt), T, p_tot, tol)
+        [n_melt, n_metal_bulk, m_mag] = add_iron_to_basalt(
+            fe_melt, 
+            dcop(n_melt), 
+            T, 
+            p_tot, 
+            tol
+        )
+
     else:
         # ensure variable creation
         n_metal_bulk = 0.
@@ -2302,29 +2208,38 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
         for mol in list(n_melt_from_impact.keys()):
             if mol not in ['Fe2O3', 'FeO', 'H2O']:
                 melt_oxides[mol] = n_melt_from_impact[mol]
-        fO2_melt_imp = calc_basalt_fo2(n_melt_from_impact['Fe2O3'],
-                                       n_melt_from_impact['FeO'],
-                                       melt_oxides, T, p_tot)
-        fO2_melt_comb = calc_basalt_fo2(n_melt['Fe2O3'], n_melt['FeO'],
-                                        melt_oxides, T, p_tot)
+
+        fO2_melt_imp = calc_basalt_fo2(
+            n_melt_from_impact['Fe2O3'],
+            n_melt_from_impact['FeO'],
+            melt_oxides, 
+            T, 
+            p_tot
+        )
+        fO2_melt_comb = calc_basalt_fo2(
+            n_melt['Fe2O3'], 
+            n_melt['FeO'],
+            melt_oxides, 
+            T, 
+            p_tot
+        )
 
         fmq = fo2_fmq(T, p_tot)  # current FMQ fO2
         iw = fo2_iw(T, p_tot)  # current FMQ fO2
 
-        print("\n>>> Total Atmospheric Presure : %.2f" % (p_tot * 1e-5))
+        print(f"\n>>> Total Atmospheric Presure : {p_tot * 1e-5:.2f} bar")
 
-        print("\n>>> Impact-Generated Melt : %.5e kg" % m_melt_from_impact)
-        print(">>>                       : %.5f Earth Mantle" %
-              (m_melt_from_impact / gC.m_earth_mantle))
-        print(">>>     FeO Added to Melt : %.5e moles" % feo_atmos)
-        print(">>>         Combined Melt : %.5e kg" % m_mag)
-        print(">>>    Pre-Iron Melt ΔFMQ : %+.5f" % (fO2_melt_imp - fmq))
-        print(">>>   Post-Iron Melt ΔFMQ : %+.5f" % (fO2_melt_comb - fmq))
-        print(">>>                  ΔIW  : %+.5f" % (fO2_melt_comb - iw))
-        print(">>>      Atmospheric ΔFMQ : %+.5f" % (fo2_atmos_og - fmq))
-        print(">>>                  ΔIW  : %+.5f" % (fo2_atmos_og - iw))
+        print(f"\n>>> Impact-Generated Melt : {m_melt_from_impact:.5e} kg")
+        print(f">>>                       : {m_melt_from_impact / gC.m_earth_mantle:.5f} Earth Mantle")
+        print(f">>>     FeO Added to Melt : {feo_atmos:.5e} moles")
+        print(f">>>         Combined Melt : {m_mag:.5e} kg")
+        print(f">>>    Pre-Iron Melt ΔFMQ : {fO2_melt_imp - fmq:+.5f}")
+        print(f">>>   Post-Iron Melt ΔFMQ : {fO2_melt_comb - fmq:+.5f}")
+        print(f">>>                  ΔIW  : {fO2_melt_comb - iw:+.5f}")
+        print(f">>>      Atmospheric ΔFMQ : {fo2_atmos_og - fmq:+.5f}")
+        print(f">>>                  ΔIW  : {fo2_atmos_og - iw:+.5f}")
 
-        print("\n>>>        Remaining Iron : %.5e moles" % n_metal_bulk)
+        print(f"\n>>>        Remaining Iron : {n_metal_bulk:.5e} moles")
 
     # keep iron mass separate from the mass of the silicate phase
     m_metal_bulk = n_metal_bulk * gC.common_mol_mass['Fe']
@@ -2341,8 +2256,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
         n_termintate = 2000
         term_display = False
         if step == n_termintate:
-            print("\x1b[1;31m>>> Equilibration terminated at " +
-                  str(n_termintate) + " steps.\x1b[0m")
+            print(f"\x1b[1;31m>>> Equilibration terminated at {n_termintate} steps.\x1b[0m")
 
             if term_display:
                 oxides = {}
@@ -2350,51 +2264,73 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     if mol not in ['Fe2O3', 'FeO', 'H2O']:
                         oxides[mol] = n_melt[mol]
 
-                fO2_melt = calc_basalt_fo2(n_melt['Fe2O3'],
-                                               n_melt['FeO'], oxides, T, p_tot)
+                fO2_melt = calc_basalt_fo2(
+                    n_melt['Fe2O3'],
+                    n_melt['FeO'], 
+                    oxides, 
+                    T, 
+                    p_tot
+                )
 
                 p_H2O_mag = calc_ph2o(n_melt['H2O'], m_mag)
 
-                table_list = [['Atmosphere', fo2_atmos, None, None,
-                               1e-5 * p_atmos['H2O']],
-                              ['Bulk Magma', fO2_melt,
-                               np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
-                               np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt),
-                               p_H2O_mag * 1e-5]]
-                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                           'pH2O [bar]']
+                table_list = [
+                    ['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                    ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt), 
+                    np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]
+                ]
+                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
                 print('\n')
-                print('\x1b[36;1m>>> Step ' + str(step) + '\x1b[0m')
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+                print(f"\x1b[36;1m>>> Step {step}\x1b[0m")
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+                ))
                 print('\n')
 
                 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
                 p_total = np.sum(list(p_atmos.values()))
                 n_melt_total = np.sum(list(n_melt.values()))
 
-                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles',
-                           'Mole Fraction']
+                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles', 'Mole Fraction']
                 table_list = []
                 for mol in list(n_atmos.keys()):
-                    table_list.append([mol, p_atmos[mol] * 1e-5,
-                                       p_atmos[mol] / p_total,
-                                       n_atmos[mol], None])
+                    table_list.append([
+                        mol, 
+                        p_atmos[mol] * 1e-5,
+                        p_atmos[mol] / p_total,
+                        n_atmos[mol], None
+                    ])
                 table_list.append([None, None, None, None, None])
                 for mol in list(n_melt.keys()):
                     if mol == 'H2O':
-                        table_list.append([mol, p_H2O_mag * 1e-5, None,
-                                           n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            p_H2O_mag * 1e-5, 
+                            None,
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                     else:
-                        table_list.append([mol, None, None, n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            None, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                 table_list.append([None, None, None, None, None])
                 table_list.append(['Fe', None, None, n_metal_bulk, None])
 
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+                ))
 
             sys.exit()
 
@@ -2411,50 +2347,74 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                 if mol not in ['Fe2O3', 'FeO', 'H2O']:
                     oxides_disp[mol] = n_melt[mol]
 
-            fO2_melt = calc_basalt_fo2(n_melt['Fe2O3'], n_melt['FeO'],
-                                       oxides_disp, T, p_tot)
+            fO2_melt = calc_basalt_fo2(
+                n_melt['Fe2O3'], 
+                n_melt['FeO'],
+                oxides_disp, 
+                T, 
+                p_tot
+            )
 
             p_H2O_mag = calc_ph2o(n_melt['H2O'], m_mag)
 
-            table_list = [['Atmosphere', fo2_atmos, None, None,
-                           1e-5 * p_atmos['H2O']],
-                          ['Bulk Magma', fO2_melt,
-                           np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
-                           np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt),
-                           p_H2O_mag * 1e-5]]
-            headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                       'pH2O [bar]']
+            table_list = [
+                ['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
+                np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]
+            ]
+            headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
             print('\n')
-            print('\x1b[36;1m>>> Step ' + str(step) + '\x1b[0m')
-            print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                           floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+            print(f"\x1b[36;1m>>> Step {step}\x1b[0m")
+            print(tabulate(
+                table_list, 
+                tablefmt='orgtbl', 
+                headers=headers,
+                floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+            ))
             print('\n')
 
             # --- display partial pressures, mixing ratios and mole fractions
             p_total = np.sum(list(p_atmos.values()))
             n_melt_total = np.sum(list(n_melt.values()))
 
-            headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles',
-                       'Mole Fraction']
+            headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles', 'Mole Fraction']
             table_list = []
             for mol in list(n_atmos.keys()):
-                table_list.append([mol, p_atmos[mol] * 1e-5,
-                                   p_atmos[mol] / p_total,
-                                   n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.), None])
+                table_list.append([
+                    mol, 
+                    p_atmos[mol] * 1e-5,
+                    p_atmos[mol] / p_total,
+                    n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.), 
+                    None
+                ])
             table_list.append([None, None, None, None, None])
             for mol in list(n_melt.keys()):
                 if mol == 'H2O':
-                    table_list.append([mol, p_H2O_mag * 1e-5, None,
-                                       n_melt[mol], n_melt[mol] / n_melt_total])
+                    table_list.append([
+                        mol, 
+                        p_H2O_mag * 1e-5, 
+                        None,
+                        n_melt[mol], 
+                        n_melt[mol] / n_melt_total
+                    ])
                 else:
-                    table_list.append([mol, None, None, n_melt[mol],
-                                       n_melt[mol] / n_melt_total])
+                    table_list.append([
+                        mol, 
+                        None, 
+                        None, 
+                        n_melt[mol],
+                        n_melt[mol] / n_melt_total
+                    ])
             table_list.append([None, None, None, None, None])
             table_list.append(['Fe', None, None, n_metal_bulk, None])
 
-            print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                           floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
+            print(tabulate(
+                table_list, 
+                tablefmt='orgtbl', 
+                headers=headers,
+                floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+            ))
 
             m_total = 0.
             for mol in list(n_atmos.keys()):
@@ -2462,7 +2422,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             for mol in list(n_melt.keys()):
                 m_total += n_melt[mol] * gC.common_mol_mass[mol]
 
-            print("\n>>> Total Mass in System : %.15e \n" % m_total)
+            print(f"\n>>> Total Mass in System : {m_total:.15e} \n")
 
         # --- fO2 Equilibration & Dissolving --- --- --- --- --- --- --- --- --
         # unpack Species (avoids issues with dictionaries)
@@ -2503,9 +2463,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
         m_atm += NH3 * gC.common_mol_mass['NH3']
 
         # pressures
-        [_, P] = update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                   'N2': N2, 'CO': CO, 'CH4': CH4,
-                                   'NH3': NH3})
+        [_, P] = update_pressures({
+            'H2': H2, 
+            'H2O': H2O_atm, 
+            'CO2': CO2,
+            'N2': N2, 
+            'CO': CO, 
+            'CH4': CH4,
+            'NH3': NH3
+        })
         # fugacities
         fo2_atmos = fo2_atm(H2, H2O_atm, T)
         fO2_melt = calc_basalt_fo2(Fe2O3, FeO, oxides, T, P)
@@ -2610,9 +2576,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # calculate fO2 of melt phase
                     log_fO2_KC = fo2_kc91(Fe2O3, FeO, oxides, T, P)
@@ -2703,9 +2675,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update pressures
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # total moles in melt
                     N_melt = Fe2O3 + FeO + H2O_mag + N_oxides
@@ -2717,12 +2695,10 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     a_KC91 = 0.196
 
                     # coefficient linking change in X_FeO to change in X_Fe2O3
-                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / \
-                              (1. + 2. * a_KC91 - 1.828 * x_feo)
+                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / (1. + 2. * a_KC91 - 1.828 * x_feo)
 
                     # total change in FeO (combined FQM and IW reactions)
-                    zeta = (N_melt - Fe2O3 + epsilon * FeO) / \
-                           (Fe2O3 + epsilon * (N_melt - FeO))
+                    zeta = (N_melt - Fe2O3 + epsilon * FeO) / (Fe2O3 + epsilon * (N_melt - FeO))
 
                     # execute changes in moles
                     Fe2O3 += d_Fe2O3
@@ -2749,9 +2725,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     N_melt = Fe2O3 + FeO + N_oxides
 
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # fO2 calculated by KC91 prescription
                     log_fO2_KC = fo2_kc91(Fe2O3, FeO, oxides, T, P)
@@ -2762,8 +2744,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching prescription equality
-                    if np.abs(np.abs(log_fO2_KC) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_KC) - np.abs(log_fo2_atm)) < tol:
                         complete_fO2 = True
                         print(">>> System equilibrated before prescription"
                               " equality.")
@@ -2771,8 +2752,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # if we've reached fO2 equality
-                    if np.abs(np.abs(log_fO2_KC) -
-                              np.abs(log_fO2_F91)) < tol:
+                    if np.abs(np.abs(log_fO2_KC) - np.abs(log_fO2_F91)) < tol:
                         complete_equal = True
                         print(">>> System reached KC91 = F91.")
                         break
@@ -2852,9 +2832,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     N_melt = Fe2O3 + FeO + N_oxides
 
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # fO2 calculated by Frost 91 prescription
                     log_fO2_F91 = fo2_f91_rh12(FeO / N_melt, T, P)
@@ -2874,8 +2860,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                         continue
 
                     # if we've reached melt-atmosphere fO2 equilibrium
-                    if np.abs(np.abs(log_fO2_F91) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_F91) - np.abs(log_fo2_atm)) < tol:
                         complete_fO2 = True
                         print(">>> System equilibrated before zero FeO.")
                         break
@@ -2908,9 +2893,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             N_melt = Fe2O3 + FeO + N_oxides
 
             # update atmospheric pressure
-            [_, P] = \
-                update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                  'N2': N2, 'CO': CO, 'CH4': CH4, 'NH3': NH3})
+            [_, P] = update_pressures({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                'N2': N2, 
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            })
 
             log_fo2_kc91 = fo2_kc91(Fe2O3, FeO, oxides, T, P)
             log_fO2_F91 = fo2_f91_rh12(FeO / N_melt, T, P)
@@ -3001,8 +2992,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching ΔIW-2
-                    if np.abs(np.abs(fO2_melt) -
-                              np.abs(fo2_atmos)) < tol:
+                    if np.abs(np.abs(fO2_melt) - np.abs(fo2_atmos)) < tol:
                         complete_metal = True
                         complete_fO2 = True
                         print(">>> System equilibrated before KC91 = F91.")
@@ -3013,9 +3003,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             # and FeO to Fe2O3 simultaneously until we reach IW-2
             # --- --- --- --- --- --- --- --- --- --- --- --- --- ---
             # update atmospheric pressure
-            [_, P] = \
-                update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                  'N2': N2, 'CO': CO, 'CH4': CH4, 'NH3': NH3})
+            [_, P] = update_pressures({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                'N2': N2, 
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            })
             # melt phase fO2
             fo2_melt = fo2_kc91(Fe2O3, FeO, oxides, T, P)
 
@@ -3045,12 +3041,10 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                     a_KC91 = 0.196
 
                     # coefficient linking change in X_FeO to change in X_Fe2O3
-                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / \
-                              (1. + 2. * a_KC91 - 1.828 * x_feo)
+                    epsilon = (x_feo / x_fe2o3) * (1. + 1.828 * x_fe2o3) / (1. + 2. * a_KC91 - 1.828 * x_feo)
 
                     # total change in FeO (combined FQM and IW reactions)
-                    zeta = (N_melt - Fe2O3 + epsilon * FeO) / \
-                           (Fe2O3 + epsilon * (N_melt - FeO))
+                    zeta = (N_melt - Fe2O3 + epsilon * FeO) / (Fe2O3 + epsilon * (N_melt - FeO))
 
                     # execute changes in moles
                     Fe2O3 += - 1. / (2. + zeta) * d_Fe
@@ -3061,9 +3055,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update atmospheric pressure
-                    [_, P] = update_pressures({'H2': H2, 'H2O': H2O_atm,
-                                               'CO2': CO2, 'N2': N2, 'CO': CO,
-                                               'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm,
+                        'CO2': CO2, 
+                        'N2': N2, 
+                        'CO': CO,
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # ensure we don't use up more atmospheric H2O than we have
                     if H2O_atm < 0.:
@@ -3110,8 +3110,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching ΔIW-2
-                    if np.abs(np.abs(fO2_melt) -
-                              np.abs(fo2_atmos)) < tol:
+                    if np.abs(np.abs(fO2_melt) - np.abs(fo2_atmos)) < tol:
                         complete_IW = True
                         complete_fO2 = True
                         print(">>> System equilibrated before IW-2.")
@@ -3169,9 +3168,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # fO2 calculated by Frost 91 prescription
                     log_fO2_melt = calc_basalt_fo2(Fe2O3, FeO, oxides, T, P)
@@ -3191,8 +3196,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                         continue
 
                     # if we've reached melt-atmosphere fO2 equilibrium
-                    if np.abs(np.abs(log_fO2_melt) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_melt) - np.abs(log_fo2_atm)) < tol:
                         complete_ox = True
                         complete_fO2 = True
                         break
@@ -3261,15 +3265,32 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             fe_track.append(Fe)
 
             # --- Partitioning --- --- ---
-            [H2O_atm, H2O_mag, m_mag] = \
-                equilibrate_H2O(Fe2O3, FeO, H2O_mag, H2, H2O_atm, oxides,
-                                    CO2, N2, CO, CH4, NH3, m_mag, tol)
-
-            # print(">>> Dissolution complete.")
+            [H2O_atm, H2O_mag, m_mag] = equilibrate_H2O(
+                Fe2O3, 
+                FeO, 
+                H2O_mag, 
+                H2, 
+                H2O_atm, 
+                oxides,
+                CO2, 
+                N2, 
+                CO, 
+                CH4, 
+                NH3, 
+                m_mag, 
+                tol
+            )
 
             # reform dictionaries
-            n_atmos = {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                       'CO': CO, 'CH4': CH4, 'NH3': NH3}
+            n_atmos = {
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2, 
+                'N2': N2,
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            }
 
         # --- H2O Dissolution --- --- --- --- --- --- --- --- --- --- --- --- -
         if chem:
@@ -3335,12 +3356,18 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             melt_moles_track.append(N_melt)
 
             # abundances for FastChem
-            abund = calc_elem_abund({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                     'N2': N2, 'CO': CO, 'CH4': CH4,
-                                     'NH3': NH3})
+            abund = calc_elem_abund({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                'N2': N2, 
+                'CO': CO, 
+                'CH4': CH4,
+                'NH3': NH3
+            })
             # prepare FastChem config files
-            new_id = sys_id + 'inside_' + str(step)
-            write_fastchem(dir_path + '/data/FastChem/' + new_id, abund, T, P)
+            new_id = f"{sys_id}inside_{step}"
+            write_fastchem(f"{dir_path}/data/FastChem/{new_id}", abund, T, P)
             # run automated FastChem
             run_fastchem_files(new_id)
             # read FastChem output
@@ -3423,8 +3450,15 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             fe_track.append(Fe)
 
             # recreate atmosphere dictionary
-            n_atmos = {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                       'CO': CO, 'CH4': CH4, 'NH3': NH3}
+            n_atmos = {
+                'H2': H2, 
+                'H2O': H2O_atm,
+                'CO2': CO2, 
+                'N2': N2,
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            }
 
         # update pressures
         [p_atmos, P] = update_pressures(n_atmos)
@@ -3450,46 +3484,61 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
 
                 p_H2O_mag = calc_ph2o(n_melt['H2O'], m_melt)
 
-                table_list = [['Atmosphere', fo2_atmos, None, None,
-                               1e-5 * p_atmos['H2O']],
-                              ['Bulk Magma', fO2_melt,
-                               np.abs(fo2_fmq(T, P)) - np.abs(fO2_melt),
-                               np.abs(fo2_iw(T, P)) - np.abs(fO2_melt),
-                               p_H2O_mag * 1e-5]]
-                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                           'pH2O [bar]']
+                table_list = [['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                              ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, P)) - np.abs(fO2_melt),
+                               np.abs(fo2_iw(T, P)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]]
+                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
                 print('\n')
                 print('\x1b[36;1m>>> Terminus Step\x1b[0m')
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+                ))
                 print('\n')
 
                 # display partial pressures, mixing ratios and mole fractions
                 n_melt_total = np.sum(list(n_melt.values()))
 
-                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles',
-                           'Mole Fraction']
+                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles', 'Mole Fraction']
                 table_list = []
                 for mol in list(n_atmos.keys()):
-                    table_list.append(
-                        [mol, p_atmos[mol] * 1e-5, p_atmos[mol] / P,
-                         n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.),
-                         None])
+                    table_list.append([
+                        mol, 
+                        p_atmos[mol] * 1e-5, 
+                        p_atmos[mol] / P,
+                        n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.),
+                        None
+                    ])
                 table_list.append([None, None, None, None, None])
                 for mol in list(n_melt.keys()):
                     if mol == 'H2O':
-                        table_list.append(
-                            [mol, p_H2O_mag * 1e-5, None, n_melt[mol],
-                             n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            p_H2O_mag * 1e-5, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                     else:
-                        table_list.append([mol, None, None, n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            None, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                 table_list.append([None, None, None, None, None])
                 table_list.append(['Fe', None, None, n_metal_bulk, None])
 
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+                ))
 
                 m_total = 0.
                 for mol in list(n_atmos.keys()):
@@ -3497,7 +3546,7 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
                 for mol in list(n_melt.keys()):
                     m_total += n_melt[mol] * gC.common_mol_mass[mol]
 
-                print("\n>>> Total Mass in System : %.15e \n" % m_total)
+                print(f"\n>>> Total Mass in System : {m_total:.15e} \n")
 
             return [n_h2_track, n_h2o_atm_track, n_co2_track, n_n2_track,
                     n_co_track, n_ch4_track, n_nh3_track, pressure_track,
@@ -3508,66 +3557,46 @@ def eq_melt_basalt(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos, wt_mo,
             continue
 
 
-def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
-                       wt_mo, H2O_init, iron_ratio, T, model_version,
-                       partition, chem, tol, sys_id):
-    """
-    Equilibrate the atmosphere with the melt phase.
+def eq_melt_peridotite(
+    m_imp: float, 
+    v_imp: float, 
+    theta: float, 
+    imp_comp: str, 
+    N_oceans: float, 
+    init_atmos: dict,
+    wt_mo: dict, 
+    H2O_init: float, 
+    iron_ratio: float, 
+    T: float, 
+    model_version: str,
+    partition: bool, 
+    chem: bool, 
+    tol: float, 
+    sys_id: str,
+) -> Tuple[list, list, list]:
+    """Equilibrate the atmosphere with a peridotitic melt phase.
 
-    Parameters
-    ----------
-    m_imp : float [kg]
-        Mass of impactor.
-    v_imp : float [km s-1]
-        Impact velocity.
-    theta : float [degrees]
-        Impact angle.
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
-    N_oceans : float [Earth Oceans]
-        Initial amount of water on the planet.
-    init_atmos : dict
-        Initial composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [bar].
-    wt_mo : dict
-        Composition of the body of magma.
-        Keys (str) full formulae of molecules.
-        Values (float) wt% of species in the body of magma.
-    H2O_init : float [wt%]
-        Initial water content of the magma melt phase.
-    iron_ratio : float
-        Molar ratio of Fe2O3 to total iron in melt phase (usually Fe2O3 + FeO).
-    T : float [K]
-        Temperature.
+    Args:
+        m_imp (float): Mass of impactor, in units of 'kg'. 
+        v_imp (float): Impact velocity, in units of 'km s-1'.
+        theta (float): Impact angle, in units of degrees.
+        imp_comp (str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite, 'F': iron meteorite)
+        N_oceans (float): Initial amount of water on the planet, in units of Earth Oceans.
+        init_atmos (dict): Initial composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of each species [bar].
+        wt_mo (dict): Composition of the body of melt. Keys (str) full formulae of molecules. Values (float) wt% of species in the body of melt.
+        H2O_init (float): Initial water content of the melt phase, in units of 'wt%'.
+        iron_ratio (float): Molar ratio of Fe2O3 to total iron in melt phase (usually Fe2O3 + FeO).
+        T (float): Temperature, in units of 'K'.
+        model_version (str): Which model version runs (e.g., 1A, 1B, 2, 3A, 3B).
+        partition (bool): Whether H2O dissolution/outgassing takes place.
+        chem (bool): Whether atmospheric chemistry takes place.
+        tol (float): Tolerance in the difference between the atmosphere and the melt fO2 at completion (i.e., fo2_atmos * (1 +/- tol) in relation to fO2_melt)
+        sys_id (str): Identifier for the system. Used in file labelling.
 
-    model_version : str
-        Dictates which model version runs (see paper Figure 1).
-    partition : bool
-        Dictates whether or not H2O dissolution/outgassing takes place.
-    chem : bool
-        Dictates whether or not atmospheric chemistry takes place.
-
-    tol : float
-        Tolerance in the difference between the atmosphere and the melt fO2
-        at completion (i.e. fo2_atmos * (1 +/- tol) in relation to fO2_melt)
-    sys_id : str
-        Identifier for the system. Used in FastChem file labelling.
-
-    Returns
-    -------
-    trackers : list
-        Lists of atmospheric abundances, fO2 & masses for the atmosphere and
-        melt phase, total atmospheric pressure, and iron abundances, for all
-        steps of the equilibration.
-    P_LIST : list
-        Composition of the atmosphere throughout the initial conditions
-        calculations. Each item in list is a dictionary similar to 'p_atmos'
-    N_LIST : list
-        Composition of the atmosphere throughout the initial conditions
-        calculations. Each item in list is a dictionary similar to 'n_atmos'
+    Returns:
+        trackers (list): Atmospheric abundances, fO2 & masses for the atmosphere and melt phase, total atmospheric pressure, and iron abundances, for all steps of the equilibration.
+        P_LIST (list): Composition of the atmosphere throughout the initial conditions calculations. Each item in list is a dictionary similar to 'p_atmos'
+        N_LIST (list): Composition of the atmosphere throughout the initial conditions calculations. Each item in list is a dictionary similar to 'n_atmos'
 
     """
     # --- Checks, Bools, and Trackers --- --- --- --- --- --- --- --- --- ---
@@ -3592,8 +3621,12 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
     atm_moles_track, melt_moles_track = [], []
 
     # --- Iron Distribution --- --- --- --- --- --- --- --- --- --- --- --- --
-    [X_fe_atm, X_fe_int, X_fe_ejec] = \
-        available_iron(m_imp, v_imp, theta, imp_comp=imp_comp)
+    [X_fe_atm, X_fe_int, X_fe_ejec] = available_iron(
+        m_imp,
+        v_imp, 
+        theta, 
+        imp_comp=imp_comp
+    )
 
     # fiducial model iron distribution
     if model_version in ['1A', '2']:
@@ -3606,14 +3639,22 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
         print(">>> ALL INTERIOR IRON DEPOSITED INTO MELT PHASE.")
 
     if display:
-        print(">>> Iron into the Atmosphere : %.5f" % X_fe_atm)
-        print(">>> Iron into the Melt Phase : %.5f" % X_fe_int)
-        print(">>>     Iron Escaping System : %.5f" % X_fe_ejec)
+        print(f">>> Iron into the Atmosphere : {X_fe_atm:.5f}")
+        print(f">>> Iron into the Melt Phase : {X_fe_int:.5f}")
+        print(f">>>     Iron Escaping System : {X_fe_ejec:.5f}")
 
     # --- Initial Atmospheric Composition --- --- --- --- --- --- --- --- ---
-    [P_ATMOS_IC, N_ATMOS_IC, P_LIST, N_LIST] = \
-        atmos_init(m_imp, v_imp, N_oceans, init_atmos, T, X_fe_atm,
-                   sys_id=sys_id, imp_comp=imp_comp, display=display)
+    [P_ATMOS_IC, N_ATMOS_IC, P_LIST, N_LIST] = atmos_init(
+        m_imp,
+        v_imp, 
+        N_oceans, 
+        init_atmos, 
+        T,
+        X_fe_atm,
+        sys_id=sys_id, 
+        imp_comp=imp_comp, 
+        display=display
+    )
 
     # select which species to include going forward
     n_atmos = {}
@@ -3636,7 +3677,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
     fo2_atmos_og = dcop(fo2_atmos)
 
     # --- Initial Magma Composition --- --- --- --- --- --- --- --- --- --- ---
-    # mass of the magma [kg]
+    # mass of the melt [kg]
     m_mag = impact_melt_mass(m_imp, v_imp, theta)
     m_melt_from_impact = dcop(m_mag)  # store melt phase mass for display
 
@@ -3653,8 +3694,13 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
         # add in metallic iron from the unoxidised impactor iron
         fe_melt = X_fe_int * fe_total
-        [n_melt, n_metal_bulk, m_mag] = \
-            add_iron_to_peridotite(fe_melt, dcop(n_melt), T, p_tot, tol)
+        [n_melt, n_metal_bulk, m_mag] = add_iron_to_peridotite(
+            fe_melt, 
+            dcop(n_melt), 
+            T, 
+            p_tot, 
+            tol
+        )
     else:
         # ensure variable creation
         n_metal_bulk = 0.
@@ -3665,28 +3711,40 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
         for mol in list(n_melt_from_impact.keys()):
             if mol not in ['Fe2O3', 'FeO', 'H2O']:
                 melt_oxides[mol] = n_melt_from_impact[mol]
-        fO2_melt_imp = calc_peridotite_fo2(n_melt_from_impact['Fe2O3'],
-                                           n_melt_from_impact['FeO'],
-                                           melt_oxides, T, p_tot)
-        fO2_melt_comb = calc_peridotite_fo2(n_melt['Fe2O3'], n_melt['FeO'],
-                                            melt_oxides, T, p_tot)
+
+        fO2_melt_imp = calc_peridotite_fo2(
+            n_melt_from_impact['Fe2O3'],
+            n_melt_from_impact['FeO'],
+            melt_oxides, 
+            T, 
+            p_tot
+        )
+        fO2_melt_comb = calc_peridotite_fo2(
+            n_melt['Fe2O3'], 
+            n_melt['FeO'],
+            melt_oxides, 
+            T, 
+            p_tot
+        )
 
         fmq = fo2_fmq(T, p_tot)  # current FMQ fO2
         iw = fo2_iw(T, p_tot)  # current IW fO2
 
-        print("\n>>> Total Atmospheric Presure : %.2f" % (p_tot * 1e-5))
+        print(f"\n>>> Total Atmospheric Presure : {p_tot * 1e-5:.2f} bar")
 
-        print("\n>>> Impact-Generated Melt : %.3e kg" % m_melt_from_impact)
-        print(">>>                       : %.3f Earth Mantle" %
-              (m_melt_from_impact / gC.m_earth_mantle))
-        print(">>>     FeO Added to Melt : %.3e moles" % feo_atmos)
-        print(">>>         Combined Melt : %.3e kg" % m_mag)
-        print(">>>     Pre-Iron Melt fO2 : FMQ %+.2f" % (fO2_melt_imp - fmq))
-        print(">>>                       :  IW %+.2f" % (fO2_melt_imp - iw))
-        print(">>>    Post-Iron Melt fO2 : FMQ %+.2f" % (fO2_melt_comb - fmq))
-        print(">>>                       :  IW %+.2f" % (fO2_melt_comb - iw))
-        print(">>>       Atmospheric fO2 : FMQ %+.2f" % (fo2_atmos_og - fmq))
-        print("\n>>>        Remaining Iron : %.3e moles" % n_metal_bulk)
+        print(f"\n>>> Impact-Generated Melt : {m_melt_from_impact:.3e} kg")
+        print(f">>>                       : {m_melt_from_impact / gC.m_earth_mantle:.3f} Earth Mantle")
+        print(f">>>     FeO Added to Melt : {feo_atmos:.3e} moles")
+        print(f">>>         Combined Melt : {m_mag:.3e} kg")
+        print(f">>>     Pre-Iron Melt fO2 : FMQ {fO2_melt_imp - fmq:+.2f}")
+        print(f">>>                       :  IW {fO2_melt_imp - iw:+.2f}")
+        print(f">>>    Post-Iron Melt fO2 : FMQ {fO2_melt_comb - fmq:+.2f}")
+        print(f">>>                       :  IW {fO2_melt_comb - iw:+.2f}")
+        print(f">>>       Atmospheric fO2 : FMQ {fo2_atmos_og - fmq:+.2f}")
+        print(f"\n>>>        Remaining Iron : {n_metal_bulk:.3e} moles")
+
+        fe3_fe = 2. * n_melt['Fe2O3'] / (2. * n_melt['Fe2O3'] + n_melt['FeO'] + n_metal_bulk)
+        print(f"\n>>> Fe3+/\u03A3Fe (after iron) : {100. * fe3_fe:.2f} %%")
 
     # keep iron mass separate from the mass of the silicate phase
     m_metal_bulk = n_metal_bulk * gC.common_mol_mass['Fe']
@@ -3712,53 +3770,72 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                     if mol not in ['Fe2O3', 'FeO', 'H2O']:
                         oxides[mol] = n_melt[mol]
 
-                fO2_melt = calc_basalt_fo2(n_melt['Fe2O3'],
-                                           n_melt['FeO'], oxides, T, p_tot)
+                fO2_melt = calc_basalt_fo2(
+                    n_melt['Fe2O3'],
+                    n_melt['FeO'], 
+                    oxides, 
+                    T, 
+                    p_tot
+                )
 
                 p_H2O_mag = calc_ph2o(n_melt['H2O'], m_mag)
 
-                table_list = [['Atmosphere', fo2_atmos, None, None,
-                               1e-5 * p_atmos['H2O']],
-                              ['Bulk Magma', fO2_melt,
-                               np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
-                               np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt),
-                               p_H2O_mag * 1e-5]]
-                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                           'pH2O [bar]']
+                table_list = [['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                              ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
+                               np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]]
+                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
                 print('\n')
                 print('\x1b[36;1m>>> Step ' + str(step) + '\x1b[0m')
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+                ))
                 print('\n')
 
                 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
                 p_total = np.sum(list(p_atmos.values()))
                 n_melt_total = np.sum(list(n_melt.values()))
 
-                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles',
-                           'Mole Fraction']
+                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles', 'Mole Fraction']
                 table_list = []
                 for mol in list(n_atmos.keys()):
-                    table_list.append([mol, p_atmos[mol] * 1e-5,
-                                       p_atmos[mol] / p_total,
-                                       n_atmos[mol], None])
+                    table_list.append([
+                        mol, 
+                        p_atmos[mol] * 1e-5,
+                        p_atmos[mol] / p_total,
+                        n_atmos[mol], 
+                        None
+                    ])
                 table_list.append([None, None, None, None, None])
                 for mol in list(n_melt.keys()):
                     if mol == 'H2O':
-                        table_list.append([mol, p_H2O_mag * 1e-5, None,
-                                           n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            p_H2O_mag * 1e-5, 
+                            None,
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                     else:
-                        table_list.append([mol, None, None, n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            None, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                 table_list.append([None, None, None, None, None])
                 table_list.append(['Fe', None, None, n_metal_bulk, None])
 
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
-
-            sys.exit()
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+                ))
 
             return [n_h2_track, n_h2o_atm_track, n_co2_track, n_n2_track,
                     n_co_track, n_ch4_track, n_nh3_track, pressure_track,
@@ -3773,24 +3850,29 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                 if mol not in ['Fe2O3', 'FeO', 'H2O']:
                     oxides[mol] = n_melt[mol]
 
-            fO2_melt = calc_peridotite_fo2(n_melt['Fe2O3'],
-                                           n_melt['FeO'], oxides, T, p_tot)
+            fO2_melt = calc_peridotite_fo2(
+                n_melt['Fe2O3'],
+                n_melt['FeO'], 
+                oxides, 
+                T, 
+                p_tot
+            )
 
             p_H2O_mag = calc_ph2o(n_melt['H2O'], m_mag)
 
-            table_list = [['Atmosphere', fo2_atmos, None, None,
-                           1e-5 * p_atmos['H2O']],
-                          ['Bulk Magma', fO2_melt,
-                           np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
-                           np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt),
-                           p_H2O_mag * 1e-5]]
-            headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                       'pH2O [bar]']
+            table_list = [['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                          ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, p_tot)) - np.abs(fO2_melt),
+                           np.abs(fo2_iw(T, p_tot)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]]
+            headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
             print('\n')
             print('\x1b[36;1m>>> Step ' + str(step) + '\x1b[0m')
-            print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                           floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+            print(tabulate(
+                table_list, 
+                tablefmt='orgtbl', 
+                eaders=headers,
+                floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+            ))
             print('\n')
 
             # --- display partial pressures, mixing ratios and mole fractions
@@ -3799,39 +3881,69 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             fe_total = 2. * n_melt['Fe2O3'] + n_melt['FeO'] + n_metal_bulk
             fac = 1e-4 / (4. * np.pi * gC.r_earth**2.)
 
-            headers = ['Species', 'P_atmos\n[bar]', 'Mixing\nRatio', 'Moles',
-                       'Iron Fraction\n(Ions)']
+            headers = ['Species', 'P_atmos\n[bar]', 'Mixing\nRatio', 'Moles', 'Iron Fraction\n(Ions)']
             table_list = []
             for mol in list(n_atmos.keys()):
-                table_list.append([mol, p_atmos[mol] * 1e-5,
-                                   p_atmos[mol] / p_total,
-                                   n_atmos[mol] * fac, None])
+                table_list.append([
+                    mol, 
+                    p_atmos[mol] * 1e-5,
+                    p_atmos[mol] / p_total,
+                    n_atmos[mol] * fac, 
+                    None
+                ])
             table_list.append([None, None, None, None, None])
             for mol in list(n_melt.keys()):
                 if mol == 'H2O':
-                    table_list.append([mol, p_H2O_mag * 1e-5, None,
-                                       n_melt[mol], None])
+                    table_list.append([
+                        mol, 
+                        p_H2O_mag * 1e-5, 
+                        None,
+                        n_melt[mol], 
+                        None
+                    ])
                 elif mol == 'Fe2O3':
-                    table_list.append([mol, None, None, n_melt[mol],
-                                       2. * n_melt[mol] / fe_total])
+                    table_list.append([
+                        mol, 
+                        None, 
+                        None, 
+                        n_melt[mol],
+                        2. * n_melt[mol] / fe_total
+                    ])
                 elif mol == 'FeO':
-                    table_list.append([mol, None, None, n_melt[mol],
-                                       n_melt[mol] / fe_total])
+                    table_list.append([
+                        mol, 
+                        None, 
+                        None, 
+                        n_melt[mol],
+                        n_melt[mol] / fe_total
+                    ])
                 else:
-                    table_list.append([mol, None, None, n_melt[mol], None])
+                    table_list.append([
+                        mol, 
+                        None, 
+                        None, 
+                        n_melt[mol], 
+                        None
+                    ])
             table_list.append([None, None, None, None, None])
-            table_list.append(['Fe', None, None, n_metal_bulk,
-                               n_metal_bulk / fe_total])
+            table_list.append(['Fe', None, None, n_metal_bulk, n_metal_bulk / fe_total])
 
-            print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                           floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
+            print(tabulate(
+                table_list, 
+                tablefmt='orgtbl', 
+                headers=headers,
+                floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+            ))
 
             m_total = 0.
             for mol in list(n_atmos.keys()):
                 m_total += n_atmos[mol] * gC.common_mol_mass[mol]
             for mol in list(n_melt.keys()):
                 m_total += n_melt[mol] * gC.common_mol_mass[mol]
-            print("\n>>> Total Mass in System : %.15e \n" % m_total)
+            print(f"\n>>> Total Mass in System : {m_total:.15e} \n")
+
+            fe3_fe = 2. * n_melt['Fe2O3'] / (2. * n_melt['Fe2O3'] + n_melt['FeO'] + n_metal_bulk)
+            print(f"\n>>> Fe3+/\u03A3Fe : {100. * fe3_fe:.3f} %%")
 
         # --- fO2 Equilibration & Dissolving --- --- --- --- --- --- --- --- --
         # unpack species (avoids issues with dictionaries)
@@ -3872,8 +3984,16 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
         m_atm += NH3 * gC.common_mol_mass['NH3']
 
         # pressures
-        [_, P] = update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                   'N2': N2, 'CO': CO, 'CH4': CH4, 'NH3': NH3})
+        [_, P] = update_pressures({
+            'H2': H2, 
+            'H2O': H2O_atm, 
+            'CO2': CO2,
+            'N2': N2, 
+            'CO': CO, 
+            'CH4': CH4, 
+            'NH3': NH3
+        })
+
         # fugacities
         fo2_atmos = fo2_atm(H2, H2O_atm, T)
         fO2_melt = calc_peridotite_fo2(Fe2O3, FeO, oxides, T, P)
@@ -3978,9 +4098,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # calculate fO2 of melt phase
                     log_fO2_sos = fo2_sossi(Fe2O3, FeO, oxides, T, P)
@@ -4004,8 +4130,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching ΔIW-2
-                    if np.abs(np.abs(log_fO2_sos) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_sos) - np.abs(log_fo2_atm)) < tol:
                         complete_IW2 = True
                         complete_fO2 = True
                         print(">>> System equilibrated before IW-2.")
@@ -4025,8 +4150,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                         continue
 
                     # if we've reached ΔIW-2
-                    if np.abs(np.abs(log_fO2_sos) -
-                              np.abs(log_fo2_iw - 2)) < tol:
+                    if np.abs(np.abs(log_fO2_sos) - np.abs(log_fo2_iw - 2)) < tol:
                         complete_IW2 = True
                         print(">>> System reached IW-2.")
                         break
@@ -4108,9 +4232,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                     N_melt = Fe2O3 + FeO + N_oxides
 
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # fO2 calculated by Sossi prescription
                     log_fO2_sos = fo2_sossi(Fe2O3, FeO, oxides, T, P)
@@ -4121,8 +4251,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching prescription equality
-                    if np.abs(np.abs(log_fO2_sos) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_sos) - np.abs(log_fo2_atm)) < tol:
                         complete_fO2 = True
                         print(">>> System equilibrated before prescription"
                               " equality.")
@@ -4130,8 +4259,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # if we've reached fO2 equality
-                    if np.abs(np.abs(log_fO2_sos) -
-                              np.abs(log_fO2_F91)) < tol:
+                    if np.abs(np.abs(log_fO2_sos) - np.abs(log_fO2_F91)) < tol:
                         complete_equal = True
                         print(">>> System reached prescription equality.")
                         break
@@ -4211,9 +4339,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                     N_melt = Fe2O3 + FeO + N_oxides
 
                     # update pressures in the atmosphere
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2, 
+                        'N2': N2,
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # fO2 calculated by Frost 91 prescription
                     log_fO2_F91 = fo2_f91_rh12(FeO / N_melt, T, P)
@@ -4222,8 +4356,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching zero FeO
-                    if np.abs(np.abs(log_fO2_F91) -
-                              np.abs(log_fo2_atm)) < tol:
+                    if np.abs(np.abs(log_fO2_F91) - np.abs(log_fo2_atm)) < tol:
                         complete_fO2 = True
                         print(">>> System equilibrated before zero FeO.")
                         break
@@ -4242,9 +4375,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             N_melt = Fe2O3 + FeO + N_oxides
 
             # update atmospheric pressure
-            [_, P] = \
-                update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                  'N2': N2, 'CO': CO, 'CH4': CH4, 'NH3': NH3})
+            [_, P] = update_pressures({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                'N2': N2, 
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            })
 
             log_fO2_sos = fo2_sossi(Fe2O3, FeO, oxides, T, P)
             log_fO2_F91 = fo2_f91_rh12(FeO / N_melt, T, P)
@@ -4335,8 +4474,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # if we've reached melt-atmosphere fO2 equilibrium
                     # before reaching ΔIW-2
-                    if np.abs(np.abs(fO2_melt) -
-                              np.abs(fo2_atmos)) < tol:
+                    if np.abs(np.abs(fO2_melt) - np.abs(fo2_atmos)) < tol:
                         complete_metal = True
                         complete_fO2 = True
                         print(">>> System equilibrated before Sossi = F91.")
@@ -4347,9 +4485,16 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             # and FeO to Fe2O3 simultaneously until we reach IW-2
             # --- --- --- --- --- --- --- --- --- --- --- --- --- ---
             # update atmospheric pressure
-            [_, P] = \
-                update_pressures({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                  'N2': N2, 'CO': CO, 'CH4': CH4, 'NH3': NH3})
+            [_, P] = update_pressures({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                'N2': N2, 
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            })
+
             # melt phase fO2
             fo2_melt = fo2_sossi(Fe2O3, FeO, oxides, T, P)
 
@@ -4388,9 +4533,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update atmospheric pressure
-                    [_, P] = update_pressures({'H2': H2, 'H2O': H2O_atm,
-                                               'CO2': CO2, 'N2': N2, 'CO': CO,
-                                               'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2,
+                        'N2': N2, 
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # ensure we don't use up more atmospheric H2O than we have
                     if H2O_atm < 0.:
@@ -4441,10 +4592,8 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                         continue
 
-                    # if we've reached melt-atmosphere fO2 equilibrium
-                    # before reaching ΔIW-2
-                    if np.abs(np.abs(fO2_melt) -
-                              np.abs(fo2_atmos)) < tol:
+                    # if we've reached melt-atmosphere fO2 equilibrium before reaching ΔIW-2
+                    if np.abs(np.abs(fO2_melt) - np.abs(fo2_atmos)) < tol:
                         complete_IW = True
                         complete_fO2 = True
                         print(">>> System equilibrated before IW-2.")
@@ -4499,9 +4648,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                     # --- --- --- --- --- --- --- --- --- ---
                     # update atmospheric pressure
-                    [_, P] = update_pressures(
-                        {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                         'CO': CO, 'CH4': CH4, 'NH3': NH3})
+                    [_, P] = update_pressures({
+                        'H2': H2, 
+                        'H2O': H2O_atm, 
+                        'CO2': CO2,
+                        'N2': N2, 
+                        'CO': CO, 
+                        'CH4': CH4, 
+                        'NH3': NH3
+                    })
 
                     # calculate fO2 of the melt phase
                     fO2_melt = calc_peridotite_fo2(Fe2O3, FeO, oxides, T, P)
@@ -4521,8 +4676,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                         continue
 
                     # if we've reached melt-atmosphere fO2 equilibrium
-                    if np.abs(np.abs(fO2_melt) -
-                              np.abs(fo2_atmos)) < tol:
+                    if np.abs(np.abs(fO2_melt) - np.abs(fo2_atmos)) < tol:
                         complete_ox = True
                         complete_fO2 = True
 
@@ -4588,15 +4742,32 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             fe_track.append(Fe)
 
             # --- Partitioning --- --- ---
-            [H2O_atm, H2O_mag, m_mag] = \
-                equilibrate_H2O(Fe2O3, FeO, H2O_mag, H2, H2O_atm, oxides,
-                                CO2, N2, CO, CH4, NH3, m_mag, tol)
-
-            # print(">>> Dissolution complete.")
+            [H2O_atm, H2O_mag, m_mag] = equilibrate_H2O(
+                Fe2O3, 
+                FeO, 
+                H2O_mag, 
+                H2, 
+                H2O_atm, 
+                oxides,
+                CO2, 
+                N2, 
+                CO, 
+                CH4, 
+                NH3, 
+                m_mag, 
+                tol
+            )
 
             # reform dictionaries
-            n_atmos = {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                       'CO': CO, 'CH4': CH4, 'NH3': NH3}
+            n_atmos = {
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2, 
+                'N2': N2,
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            }
 
         # --- H2O Dissolution --- --- --- --- --- --- --- --- --- --- --- --- -
         if chem:
@@ -4660,12 +4831,19 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             melt_moles_track.append(N_melt)
 
             # abundances for FastChem
-            abund = calc_elem_abund({'H2': H2, 'H2O': H2O_atm, 'CO2': CO2,
-                                     'N2': N2, 'CO': CO, 'CH4': CH4,
-                                     'NH3': NH3})
+            abund = calc_elem_abund({
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2,
+                 'N2': N2, 
+                 'CO': CO, 
+                 'CH4': CH4,
+                 'NH3': NH3
+            })
+
             # prepare FastChem config files
-            new_id = sys_id + 'inside_' + str(step)
-            write_fastchem(dir_path + '/data/FastChem/' + new_id, abund, T, P)
+            new_id = f"{sys_id}inside_{step}"
+            write_fastchem(f"{dir_path}/data/FastChem/{new_id}", abund, T, P)
             # run automated FastChem
             run_fastchem_files(new_id)
             # read FastChem output
@@ -4746,8 +4924,15 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
             fe_track.append(Fe)
 
             # recreate atmosphere dictionary
-            n_atmos = {'H2': H2, 'H2O': H2O_atm, 'CO2': CO2, 'N2': N2,
-                       'CO': CO, 'CH4': CH4, 'NH3': NH3}
+            n_atmos = {
+                'H2': H2, 
+                'H2O': H2O_atm, 
+                'CO2': CO2, 
+                'N2': N2,
+                'CO': CO, 
+                'CH4': CH4, 
+                'NH3': NH3
+            }
 
         # update pressures
         [p_atmos, P] = update_pressures(n_atmos)
@@ -4773,46 +4958,61 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
 
                 p_H2O_mag = calc_ph2o(n_melt['H2O'], m_melt)
 
-                table_list = [['Atmosphere', fo2_atmos, None, None,
-                               1e-5 * p_atmos['H2O']],
-                              ['Bulk Magma', fO2_melt,
-                               np.abs(fo2_fmq(T, P)) - np.abs(fO2_melt),
-                               np.abs(fo2_iw(T, P)) - np.abs(fO2_melt),
-                               p_H2O_mag * 1e-5]]
-                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW',
-                           'pH2O [bar]']
+                table_list = [['Atmosphere', fo2_atmos, None, None, 1e-5 * p_atmos['H2O']],
+                              ['Bulk Magma', fO2_melt, np.abs(fo2_fmq(T, P)) - np.abs(fO2_melt),
+                               np.abs(fo2_iw(T, P)) - np.abs(fO2_melt), p_H2O_mag * 1e-5]]
+                headers = ['', 'log10(fO2)', '\u0394FMQ', '\u0394IW', 'pH2O [bar]']
 
                 print('\n')
                 print('\x1b[36;1m>>> Terminus Step\x1b[0m')
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", ".5f", ".5f", ".5f", "09.5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", ".5f", ".5f", ".5f", "09.5f")
+                ))
                 print('\n')
 
                 # display partial pressures, mixing ratios and mole fractions
                 n_melt_total = np.sum(list(n_melt.values()))
 
-                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles',
-                           'Mole Fraction']
+                headers = ['Species', 'p [bar]', 'Mixing Ratio', 'Moles', 'Mole Fraction']
                 table_list = []
                 for mol in list(n_atmos.keys()):
-                    table_list.append(
-                        [mol, p_atmos[mol] * 1e-5, p_atmos[mol] / P,
-                         n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.),
-                         None])
+                    table_list.append([
+                        mol, 
+                        p_atmos[mol] * 1e-5, 
+                        p_atmos[mol] / P,
+                        n_atmos[mol] / (4.e4 * np.pi * gC.r_earth ** 2.),
+                        None
+                    ])
                 table_list.append([None, None, None, None, None])
                 for mol in list(n_melt.keys()):
                     if mol == 'H2O':
-                        table_list.append(
-                            [mol, p_H2O_mag * 1e-5, None, n_melt[mol],
-                             n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            p_H2O_mag * 1e-5, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                     else:
-                        table_list.append([mol, None, None, n_melt[mol],
-                                           n_melt[mol] / n_melt_total])
+                        table_list.append([
+                            mol, 
+                            None, 
+                            None, 
+                            n_melt[mol],
+                            n_melt[mol] / n_melt_total
+                        ])
                 table_list.append([None, None, None, None, None])
                 table_list.append(['Fe', None, None, n_metal_bulk, None])
 
-                print(tabulate(table_list, tablefmt='orgtbl', headers=headers,
-                               floatfmt=("", "09.5f", ".5f", ".5e", ".5f")))
+                print(tabulate(
+                    table_list, 
+                    tablefmt='orgtbl', 
+                    headers=headers,
+                    floatfmt=("", "09.5f", ".5f", ".5e", ".5f")
+                ))
 
                 m_total = 0.
                 for mol in list(n_atmos.keys()):
@@ -4820,7 +5020,7 @@ def eq_melt_peridotite(m_imp, v_imp, theta, imp_comp, N_oceans, init_atmos,
                 for mol in list(n_melt.keys()):
                     m_total += n_melt[mol] * gC.common_mol_mass[mol]
 
-                print("\n>>> Total Mass in System : %.15e \n" % m_total)
+                print("\n>>> Total Mass in System : {m_total:.15e} \n")
 
             return [n_h2_track, n_h2o_atm_track, n_co2_track, n_n2_track,
                     n_co_track, n_ch4_track, n_nh3_track, pressure_track,

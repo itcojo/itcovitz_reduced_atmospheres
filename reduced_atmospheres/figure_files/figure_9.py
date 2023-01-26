@@ -28,9 +28,13 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_9():
+    """Plot Figure 9 from Itcovitz et al. (2022).
+
+    Oxygen fugacity of the mantle before and after remixing with the impacted-effected melt phase.
+    
+    """
     # impactor masses`
-    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10.,
-                         endpoint=True)
+    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10., endpoint=True)
 
     # convert moles to column densities
     fac = 1e-4 / (4. * np.pi * gC.r_earth**2.)
@@ -59,8 +63,13 @@ def plot_figure_9():
             if mol not in ['Fe2O3', 'FeO', 'H2O']:
                 oxides[mol] = n_melt[mol]
 
-        fo2_melt = eq_melt.calc_peridotite_fo2(n_melt['Fe2O3'], n_melt['FeO'],
-                                               oxides, temp, p_tot)
+        fo2_melt = eq_melt.calc_peridotite_fo2(
+            n_melt['Fe2O3'], 
+            n_melt['FeO'],
+            oxides, 
+            temp, 
+            p_tot
+        )
 
         fo2_vals_per.append(fo2_melt - eq_melt.fo2_fmq(temp, p_tot))
 
@@ -72,8 +81,16 @@ def plot_figure_9():
 
     for fo2_val in [val for val in fo2_vals_per]:
         # calculate moles from wt% prescription (includes adding H2O)
-        n_melt = eq_melt.basalt_comp_by_fo2(m_mag, 'FMQ', fo2_val, gC.basalt,
-                                            0.05, p_tot, temp)
+        n_melt = eq_melt.basalt_comp_by_fo2(
+            m_mag, 
+            'FMQ', 
+            fo2_val, 
+            gC.basalt,
+            0.05, 
+            p_tot, 
+            temp
+        )
+        
         oxides = {}
         for mol in list(n_melt.keys()):
             if mol not in ['Fe2O3', 'FeO', 'H2O']:
@@ -93,7 +110,7 @@ def plot_figure_9():
     m_melt_bas = []
     for item in masses:
         # file name
-        var_str = "%.2e" % item
+        var_str = f"{item:.2e}"
         var_str = var_str.replace('.', '_')
         var_str = var_str.replace('+', '')
         dir_mass = dir_path + '/output/m_imps/'
@@ -107,10 +124,8 @@ def plot_figure_9():
             fe_3 = np.array(list(f['melt/fe2o3']))
             fe_2 = np.array(list(f['melt/feo']))
             fe_0 = np.array(list(f['metal/fe']))
-            ferric_bas_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_bas_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
+            ferric_bas_init.append(2. * fe_3[0] / (2. * fe_3[0] + fe_2[0] + fe_0[0]))
+            ferric_bas_fin.append(2. * fe_3[-1] / (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
 
             fo2_melt = np.array(list(f['melt/fo2']))
             fo2_bas_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
@@ -126,7 +141,7 @@ def plot_figure_9():
     m_melt_per = []
     for item in masses:
         # file name
-        var_str = "%.2e" % item
+        var_str = f"{item:.2e}"
         var_str = var_str.replace('.', '_')
         var_str = var_str.replace('+', '')
         dir_mass = dir_path + '/output/m_imps/'
@@ -140,10 +155,8 @@ def plot_figure_9():
             fe_3 = np.array(list(f['melt/fe2o3']))
             fe_2 = np.array(list(f['melt/feo']))
             fe_0 = np.array(list(f['metal/fe']))
-            ferric_per_init.append(2. * fe_3[0] /
-                                   (2. * fe_3[0] + fe_2[0] + fe_0[0]))
-            ferric_per_fin.append(2. * fe_3[-1] /
-                                  (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
+            ferric_per_init.append(2. * fe_3[0] / (2. * fe_3[0] + fe_2[0] + fe_0[0]))
+            ferric_per_fin.append(2. * fe_3[-1] / (2. * fe_3[-1] + fe_2[-1] + fe_0[-1]))
 
             fo2_melt = np.array(list(f['melt/fo2']))
             fo2_per_init.append(fo2_melt[0] - eq_melt.fo2_fmq(temp, p_tot))
@@ -164,8 +177,7 @@ def plot_figure_9():
         m_sol = m_whole_mantle - m_mag
 
         # molar composition of solid mantle
-        n_solid = \
-            eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
+        n_solid = eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
 
         # ferric-to-iron ratio of solid mantle
         fe3_frac_solid = 2. * n_solid['Fe2O3'] / \
@@ -257,7 +269,7 @@ def plot_figure_9():
     # Y-AXIS PERIDOTITE --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     ax0.set_ylabel('Fe$^{3+}$ / $\Sigma$ Fe', fontsize=12)
     ax0.set_yticks(iron_ratios_per)
-    ax0.set_yticklabels(["%.3f" % val for val in iron_ratios_per])
+    ax0.set_yticklabels([f"{val:.3f}" for val in iron_ratios_per])
     ax0.set_ylim([0., fe_max])
     ax0.tick_params(axis='y', which='both', left=True, right=False,
                     labelleft=True, labelright=False)
@@ -268,7 +280,7 @@ def plot_figure_9():
 
     ax00.set_ylim(ax0.get_ylim())
     ax00.set_yticks(ax0.get_yticks())
-    yticklabels = ["%.2f" % val for val in fo2_vals_per]
+    yticklabels = [f"{val:.2f}" for val in fo2_vals_per]
     ax00.set_yticklabels(yticklabels, color=cols['H2'])
 
     ax0.set_title('Peridotite')
@@ -280,15 +292,14 @@ def plot_figure_9():
     # Y-AXIS BASALT --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     ax1.set_ylim(ax0.get_ylim())
     ax1.set_yticks(ax0.get_yticks())
-    # yticklabels = ["%.1f" % val for val in fo2_vals_bas]
-    yticklabels = ["" % val for val in fo2_vals_bas]
+    yticklabels = [f"{val:.2f}" for val in fo2_vals_bas]
     ax1.set_yticklabels(yticklabels)
 
     ax11 = ax1.twinx()
     ax11.set_ylabel('Fe$^{3+}$ / $\Sigma$ Fe', fontsize=12)
     ax11.set_ylim(ax0.get_ylim())
     ax11.set_yticks(ax0.get_yticks())
-    ax11.set_yticklabels(["%.3f" % val for val in iron_ratios_bas])
+    ax11.set_yticklabels([f"{val:.3f}" for val in iron_ratios_bas])
     ax11.tick_params(axis='y', which='both', left=False, right=True,
                      labelleft=False, labelright=True)
 
@@ -315,8 +326,7 @@ def plot_figure_9():
     # IMPORT DATA FROM MODELS 3B
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # impactor masses
-    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10.,
-                         endpoint=True)
+    masses = np.logspace(np.log10(2e21), np.log10(2.44e22), 30, base=10., endpoint=True)
 
     # --- --- --- --- --- ---
     # BASALT
@@ -326,7 +336,7 @@ def plot_figure_9():
     m_melt_bas = []
     for item in masses:
         # file name
-        var_str = "%.2e" % item
+        var_str = f"{item:.2e}" 
         var_str = var_str.replace('.', '_')
         var_str = var_str.replace('+', '')
         dir_mass = dir_path + '/output/m_imps/'
@@ -359,7 +369,7 @@ def plot_figure_9():
     m_melt_per = []
     for item in masses:
         # file name
-        var_str = "%.2e" % item
+        var_str = f"{m_imp:.2e}"
         var_str = var_str.replace('.', '_')
         var_str = var_str.replace('+', '')
         dir_mass = dir_path + '/output/m_imps/'
@@ -397,8 +407,7 @@ def plot_figure_9():
         m_sol = m_whole_mantle - m_mag
 
         # molar composition of solid mantle
-        n_solid = \
-            eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
+        n_solid = eq_melt.peridotite_comp_by_fe_ratio(m_sol, 0.05, gC.klb, h2o_init)
 
         # ferric-to-iron ratio of solid mantle
         fe3_frac_solid = 2. * n_solid['Fe2O3'] / \
@@ -449,5 +458,5 @@ def plot_figure_9():
                                 color='k', linestyle='-', linewidth=2))
     ax0.legend(handles=handles, loc='upper right', fontsize=8)
 
-    plt.savefig(dir_path + '/figures/figure_9.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_9.pdf", dpi=200)
     # plt.show()

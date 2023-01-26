@@ -27,45 +27,37 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
-                    sys_id, imp_comp='E'):
+def atmos_init_adap(
+    mass_imp: float, 
+    vel_imp: float, 
+    init_ocean: float, 
+    p_atmos: dict,
+    temp: float, 
+    fe_frac: float,
+    sys_id: str, 
+    imp_comp: Optional[str] = 'E', 
+    display: Optional[bool] = False,
+) -> Tuple[dict, dict, list, list]:
     """
     Adapted version of 'atmos_init' from 'equilibrate_melt', specifically made
     for plotting the figure.
 
-    Parameters
-    ----------
-    mass_imp : float [kg]
-        Mass of the impactor.
-    vel_imp : float [km s-1]
-        Impact velocity.
-    init_ocean : float [Earth Oceans]
-        Initial amount of water on the planet receiving impact.
-    p_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) partial pressure of each species [bar].
-    temp : float [K]
-        Temperature of the atmosphere before impact.
-    sys_id : str
-        Label of the atmosphere-magma system ('system_id'), used as file names
-    imp_comp : str
-        Impactor composition indicator ('C': carbonaceous chondrite,
-        'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite,
-        'E': enstatite chondrite, 'F': iron meteorite)
+    Args:
+        mass_imp (float): Mass of the impactor, in units of 'kg'.
+        vel_imp (float): Impact velocity, in units of 'km s-1'.
+        init_ocean (float): Initial amount of water on the planet receiving impact, in units of Earth Oceans.
+        p_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) partial pressure of each species, in units of 'bar'.
+        temp (float): Temperature of the atmosphere before impact, in units of 'K'.
+        fe_frac (float): Fraction of the impactor's iron inventory which is available to reduce the vaporised steam oceans.
+        sys_id (str): Label of the atmosphere-melt system ('system_id'), used as file names
+        imp_comp (optional, str): Impactor composition indicator ('C': carbonaceous chondrite, 'L': ordinary (L) chondrite, 'H': ordinary (H) chondrite, 'E': enstatite chondrite,  'F': iron meteorite)
+        display (optional, bool): Whether to print out results tables during calculations.
 
-    Returns
-    -------
-    p_atmos (updated)
-    n_atmos : dict
-        Composition of the atmosphere.
-        Keys (str) full formulae of molecules.
-        Values (float) number of moles of species in atmosphere.
-    p_list : list
-        Partial pressure dictionaries at each stage of the calculations.
-        [initial, erosion, ocean vaporisation, impactor vaporisation,
-    n_list : list
-        Moles dictionaries at each stage of the calculations.
+    Returns:
+        p_atmos (dict): Update of input parameter 'p_atmos'.
+        n_atmos (dict): Composition of the atmosphere. Keys (str) full formulae of molecules. Values (float) number of moles of species in atmosphere.
+        p_list (list):  Partial pressure dictionaries at each stage of the calculations, [initial, erosion, ocean vaporisation, impactor vaporisation, chemical equilibrium].
+        n_list (list):  Molar composition dictionaries at each stage of the calculations, [initial, erosion, ocean vaporisation, impactor vaporisation, chemical equilibrium].
 
     """
     p_init = dcop(p_atmos)  # initial input atmosphere
@@ -117,8 +109,13 @@ def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     # impactor diameter [km]
     d_imp = eq_melt.impactor_diameter(mass_imp, imp_comp)
 
-    [X_ejec, n_atmos] = eq_melt.atmos_ejection(n_atmos, mass_imp, d_imp,
-                                               vel_imp,  param=0.7)
+    [X_ejec, n_atmos] = eq_melt.atmos_ejection(
+        n_atmos, 
+        mass_imp, 
+        d_imp,
+        vel_imp,  
+        param=0.7
+    ) 
 
     # recalculate pressures
     [p_atmos, _] = eq_melt.update_pressures(n_atmos)
@@ -168,10 +165,10 @@ def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     init_reduce_moles = init_reduce_mass / gC.common_mol_mass['Fe']  # [moles]
 
     if init_reduce_moles > init_h2o + n_atmos['CO2']:
-        print("More Fe than H2O + CO2 for impactor mass = %.2e." % mass_imp)
+        print(f"More Fe than H2O + CO2 for impactor mass = {mass_imp:.2e}.")
         sys.exit()
     elif init_reduce_moles > init_h2o:
-        print("More Fe than H2O for impactor mass = %.2e." % mass_imp)
+        print(f"More Fe than H2O for impactor mass = {mass_imp:.2e}.")
     else:
         # add H2O and H2 into the atmosphere
         n_atmos['H2O'] -= init_reduce_moles
@@ -191,9 +188,12 @@ def atmos_init_adap(mass_imp, vel_imp, init_ocean, p_atmos, temp, fe_frac,
     abund = eq_melt.calc_elem_abund(n_atmos)
 
     # prepare FastChem config files
-    eq_melt.write_fastchem(dir_path + '/reduced_atmospheres/data/FastChem/' +
-                           sys_id, abund, temp,
-                           float(np.sum(list(p_atmos.values()))))
+    eq_melt.write_fastchem(
+        f"{dir_path}/reduced_atmospheres/data/FastChem/{sys_id}", 
+        abund, 
+        temp,
+        float(np.sum(list(p_atmos.values())))
+    )
 
     # run automated FastChem
     eq_melt.run_fastchem_files(sys_id)
@@ -228,14 +228,9 @@ def zero_to_nan(array_1d):
 
 
 def plot_figure_7():
-    """
-    Plots partial pressures of species from pre-impact to post-equilibration.
+    """Plot Figure 7 from Itcovitz et al. (2022).
 
-    Parameters
-    ----------
-
-    Returns
-    -------
+    Partial pressures of atmospheric species at each stage of calculations.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -322,7 +317,7 @@ def plot_figure_7():
     co, ch4, nh3, p_tot = np.zeros(6), np.zeros(6), np.zeros(6), np.zeros(6)
 
     # file name
-    var_string = "%.2e" % m_imp
+    var_string = f"{m_imp:.2e}"
     var_string = var_string.replace('.', '_')
     var_string = var_string.replace('+', '')
 
@@ -490,9 +485,9 @@ def plot_figure_7():
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # equilibration dots
     dots = np.arange(limit-0.5, limit+0.5, 0.25)
-    ax1.plot(dots, np.ones(len(dots)) * h2_ma[limit - 1], color=cols['H2'],
+    ax1.plot(dots, np.ones(len(dots)) * h2_ma[limit], color=cols['H2'],
              linestyle='', marker='o', markersize=2)
-    ax1.text(x=dots[-1] + 0.05, y=1.2 * h2_ma[limit - 1],
+    ax1.text(x=dots[-1] + 0.05, y=1.2 * h2_ma[limit],
              s='repeat to\nequilibrium', color=cols['H2'], fontsize=6,
              ha='right', va='bottom')
 
@@ -505,14 +500,14 @@ def plot_figure_7():
     ax1.text(x=0.25, y=460, s='H$_2$O partitioning', fontsize=6, color='grey',
              ha='left', va='top', rotation=295)
 
-    h2_xy = (x_vals[-1] + 0.1, 120)
-    h2_ma_xy = (-0.2, 270)
+    h2_xy = (x_vals[-1] + 0.15, h2[-1])
+    h2_ma_xy = (-0.2, h2_ma[1])
     con = ConnectionPatch(xyA=h2_xy, xyB=h2_ma_xy,
                           coordsA="data", coordsB="data", arrowstyle='->',
                           axesA=ax0, axesB=ax1, color=cols['H2'])
     fig.add_artist(con)
-    ax0.text(x=5.38, y=200, s='redox chemistry', fontsize=6, ha='right',
-             color=cols['H2'])
+    ax0.text(x=5.4, y=0.6 * (h2[-1] + h2_ma[1]), s='redox chemistry',
+             fontsize=6, ha='right', color=cols['H2'])
 
     # h2o_xy = (x_vals[-1], h2o[-1])
     # h2o_ma_xy = (0, h2o_ma[1])
@@ -521,5 +516,5 @@ def plot_figure_7():
     #                       axesA=ax0, axesB=ax1, color=cols['H2O'])
     # fig.add_artist(con)
 
-    plt.savefig(dir_path + '/figures/figure_7.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_7.pdf", dpi=200)
     # plt.show()

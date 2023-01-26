@@ -28,9 +28,9 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_4():
-    """
-    Plots impact-generated melt mass as a function of either impact energy,
-    impactor mass, or modified specific energy of impact (Stewart+, 2015).
+    """Plot Figure 4 from Itcovitz et al. (2022).
+
+    Impact-generated melt mass or vapor mass as a function of impactor mass or energy of impact.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -50,8 +50,12 @@ def plot_figure_4():
     energy_stan = 0.5 * m_imp_stan * gC.m_earth / (m_imp_stan + gC.m_earth) * \
                   (1e3 * v_imp_stan) ** 2.
     # modified specific energy of impact
-    [q_s_stan, _] = eq_melt.specific_energy(gC.m_earth, m_imp_stan, v_imp_stan,
-                                            np.sin(np.pi * theta_stan / 180.))
+    [q_s_stan, _] = eq_melt.specific_energy(
+        gC.m_earth, 
+        m_imp_stan, 
+        v_imp_stan,
+        np.sin(np.pi * theta_stan / 180.)
+    )
 
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # SET UP FIGURE
@@ -164,7 +168,7 @@ def plot_figure_4():
     mass_00, mass_30, mass_45, mass_60 = [], [], [], []
     q_s_00, q_s_30, q_s_45, q_s_60 = [], [], [], []
 
-    file = dir_path + '/reduced_atmospheres/data/melt_masses.txt'
+    file = f"{dir_path}/reduced_atmospheres/data/melt_masses.txt"
     with open(file, 'r') as csvfile:
         data = csv.reader(csvfile, delimiter=',')
         next(data, None)
@@ -177,7 +181,7 @@ def plot_figure_4():
             m_t, m_i = float(row[1]), float(row[2])
             # target and impactor radii
             r_t = 0.5 * 1e3 * eq_melt.impactor_diameter(m_t, 'E')
-            r_i = 0.5 * 1e3 * eq_melt.impactor_diameter(m_t, 'E')
+            r_i = 0.5 * 1e3 * eq_melt.impactor_diameter(m_i, 'E')
             # mutual escape velocity
             v_esc = eq_melt.escape_velocity(m_t, m_i, r_t, r_i)
             # impact velocity
@@ -189,8 +193,12 @@ def plot_figure_4():
             E_imp = float(row[5])
 
             # specific energy of impact
-            [Q_S, _] = eq_melt.specific_energy(m_t, m_i, v_imp,
-                                               np.sin(np.pi * theta / 180.))
+            [Q_S, _] = eq_melt.specific_energy(
+                m_t, 
+                m_i, 
+                v_imp,
+                np.sin(np.pi * theta / 180.)
+            )
             # forsterite reservoir masses
             M_MELT = float(row[6])
             M_SCF = float(row[7])
@@ -316,5 +324,5 @@ def plot_figure_4():
     ax2.legend(handles=handles, loc='lower right', fontsize=7, ncol=3,
                bbox_to_anchor=(1.01, 1.01))
 
-    plt.savefig(dir_path + '/figures/figure_4.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_4.pdf", dpi=200)
     # plt.show()

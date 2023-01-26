@@ -45,12 +45,8 @@ figure_4 = False
 figure_5 = False
 figure_6 = False
 figure_7 = False
-figure_8 = False
+figure_8 = True
 figure_9 = False
-
-# special figures
-# reduced_atmospheres.figure_files.figure_test_values.plot_test()
-# sys.exit()
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -58,8 +54,7 @@ figure_9 = False
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # impactor mass
-m_imps = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10.,
-                     endpoint=True)
+m_imps = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10., endpoint=True)
 
 # peridotitic melt phase ferric-to-iron ratio
 fracs = np.arange(0.010, 0.11, 0.01)
@@ -140,8 +135,12 @@ if model_run:
 
         d_imp = eq_melt.impactor_diameter(m_imp, imp_type)  # [km]
 
-        v_esc = eq_melt.escape_velocity(gC.m_earth, m_imp, gC.r_earth,
-                                        0.5 * d_imp * 1e3)  # [km s-1]
+        v_esc = eq_melt.escape_velocity(  # escape velocity [km s-1]
+            gC.m_earth, 
+            m_imp, 
+            gC.r_earth,
+            0.5 * d_imp * 1e3
+        )
         v_imp = 2. * v_esc  # impact velocity [km s-1]
 
         # BASALT --- --- --- --- --- ---
@@ -151,10 +150,23 @@ if model_run:
 
             # equilibrate magma with atmosphere
             [trackers, p_init, n_init] = eq_melt.eq_melt_basalt(
-                m_imp, v_imp, theta, imp_type, vaporised_oceans, init_atmos,
-                comp_bas, initial_water, fO2_buffer, fO2_diff, temp,
-                model_version, partition=True, chem=False, tol=1e-5,
-                sys_id=system_id)
+                m_imp, 
+                v_imp, 
+                theta, 
+                imp_type, 
+                vaporised_oceans, 
+                init_atmos,
+                comp_bas, 
+                initial_water, 
+                fO2_buffer, 
+                fO2_diff, 
+                temp,
+                model_version, 
+                partition=True, 
+                chem=False, 
+                tol=1e-5,
+                sys_id=system_id
+            )  
 
         # PERIDOTITE --- --- --- --- --- ---
         if peridotite:
@@ -163,9 +175,22 @@ if model_run:
 
             # equilibrate magma with atmosphere
             [trackers, p_init, n_init] = eq_melt.eq_melt_peridotite(
-                m_imp, v_imp, theta, imp_type, vaporised_oceans, init_atmos,
-                comp_per, initial_water, iron_ratio, temp, model_version,
-                partition=True, chem=False, tol=1e-5, sys_id=system_id)
+                m_imp, 
+                v_imp, 
+                theta, 
+                imp_type, 
+                vaporised_oceans, 
+                init_atmos,
+                comp_per, 
+                initial_water, 
+                iron_ratio, 
+                temp, 
+                model_version,
+                partition=True, 
+                chem=False, 
+                tol=1e-5, 
+                sys_id=system_id
+            )
 
         # unpack atmosphere before thermochemical equilibrium is applied
         species = ['H2O', 'H2', 'N2', 'CO2']
@@ -205,12 +230,7 @@ if model_run:
 
             # NOTE: cannot save dictionaries like this!!
 
-        print('\n\x1b[1;33m>>> Equilibrated system saved to ' +
-              save_file + '\x1b[0m')
-
-        sys.exit()
-
-    sys.exit()
+        print('\n\x1b[1;33m>>> Equilibrated system saved to ' + save_file + '\x1b[0m')
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -230,7 +250,7 @@ if figure_5:
 if figure_6:
     # post-impact system plot
     reduced_atmospheres.figure_files.figure_6.plot_figure_6()
-    reduced_atmospheres.figure_files.figure_6_B.plot_figure_6B()
+    # reduced_atmospheres.figure_files.figure_6_B.plot_figure_6B()
     print(">>> Figure 6 generated.")
 
 if figure_7:

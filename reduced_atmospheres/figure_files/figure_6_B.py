@@ -32,12 +32,9 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_6B():
-    """
-    Parameters
-    ----------
+    """Plot Figure 6 from Itcovitz et al. (2022).
 
-    Returns
-    -------
+    The state of the system at the post-impact stage as a function of impactor mass in Model 3B.
 
     """
     # range of impact masses [kg]

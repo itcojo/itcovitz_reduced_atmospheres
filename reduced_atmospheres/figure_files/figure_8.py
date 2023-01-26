@@ -95,13 +95,10 @@ def move_axes_up(ax0, ax1):
 
 
 def plot_figure_8():
-    """
-    Parameters
-    ----------
+    """Plot Figure 8 from Itcovitz et al. (2022).
 
-    Returns
-    -------
-
+    Hydrogen abundances and oxygen fugacities under the different model scenarios before and after melt-atmosphere equilibration.
+    
     """
     masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10.,
                          endpoint=True)
@@ -127,7 +124,7 @@ def plot_figure_8():
         for m_imp in masses:
             try:
                 # file name
-                var_str = "%.2e" % m_imp
+                var_str = f"{m_imp:.2e}"
                 var_str = var_str.replace('.', '_')
                 var_str = var_str.replace('+', '')
                 dir_mass = dir_path + '/output/m_imps/'
@@ -149,7 +146,7 @@ def plot_figure_8():
         for m_imp in masses:
             try:
                 # file name
-                var_str = "%.2e" % m_imp
+                var_str = f"{m_imp:.2e}"
                 var_str = var_str.replace('.', '_')
                 var_str = var_str.replace('+', '')
                 dir_mass = dir_path + '/output/m_imps/'
@@ -202,8 +199,7 @@ def plot_figure_8():
         n_start = 51
 
         # column density file
-        file_col = 'Mi=' + str(M) + '/IW_Mi=' + str(M) + \
-                   '_pCO2=100_pH2O=500_nobuffer.outcolumns'
+        file_col = f"Mi={M}/IW_Mi={M}_pCO2=100_pH2O=500_nobuffer.outcolumns"
         with open(Z_dir + file_col, 'r') as f:
             for _ in range(8 + n_start):  # move to top row of results
                 next(f)
@@ -224,8 +220,7 @@ def plot_figure_8():
                 break
 
         # partial pressures
-        file_pre = 'Mi=' + str(M) + '/IW_Mi=' + str(M) + \
-                   '_pCO2=100_pH2O=500_nobuffer.out'
+        file_pre = f"Mi={M}/IW_Mi={M}_pCO2=100_pH2O=500_nobuffer.out"
         with open(Z_dir + file_pre, 'r') as f:
             for _ in range(8 + n_start):  # move to top row of results
                 next(f)
@@ -352,9 +347,14 @@ def plot_figure_8():
     titles = ['Model 1B', 'Model 2', 'Model 3A', 'Model 3B']
     titled_axes = ['1B_atm', '2_atm', '3A_atm', '3B_atm']
     for idx in range(len(titled_axes)):
-        axs[titled_axes[idx]].text(x=0.01, y=1.04, s=titles[idx], ha='left',
-                                   transform=axs[titled_axes[idx]].transAxes,
-                                   fontsize=9)
+        axs[titled_axes[idx]].text(
+            x=0.01, 
+            y=1.04, 
+            s=titles[idx], 
+            ha='left',
+            transform=axs[titled_axes[idx]].transAxes,
+            fontsize=9
+        )
 
     # --- --- --- --- --- ---
     # STANDARD IMPACTOR MASS
@@ -442,11 +442,6 @@ def plot_figure_8():
                        color=cols['CO2'], linestyle='-', linewidth=1)
     axs['1B_fo2'].plot(masses, [fo2_melt_per[1][i][-1] for i in range(len(masses))],
                        color=cols['CO2'], linestyle='-', linewidth=1)
-
-    # labels
-    # print("ΔFMQ = 0 has raw fO2 of %.2f" % fo2_melt_bas[1][0][-1])
-    # print("  IW = 0 has raw fO2 of %.2f" % iw_vals[0])
-    # sys.exit()
 
     axs['1B_fo2'].text(masses[0], 1.01 * fo2_melt_bas[1][0][-1], s='B',
                        color=cols['CO2'], va='top')
@@ -662,5 +657,5 @@ def plot_figure_8():
     axs['2_fo2'].text(x=4.1, y=-18.6, s='  \u2713 iron distribution')
     axs['2_fo2'].text(x=4.1, y=-19.3, s='  [interior iron in other]')
 
-    plt.savefig(dir_path + '/figures/figure_8.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_8.pdf", dpi=200)
     # plt.show()

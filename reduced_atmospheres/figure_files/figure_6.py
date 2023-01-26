@@ -32,17 +32,13 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 def plot_figure_6():
-    """
-    Parameters
-    ----------
+    """Plot Figure 6 from Itcovitz et al. (2022).
 
-    Returns
-    -------
+    The state of the system at the post-impact stage as a function of impactor mass in Model 3A.
 
     """
     # range of impact masses [kg]
-    impactor_masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30,
-                                  base=10., endpoint=True)
+    impactor_masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10., endpoint=True)
 
     # calculate post-impact atmospheres
     h2, h2o, co2, n2, co, ch4, pressures = [], [], [], [], [], [], []
@@ -59,7 +55,7 @@ def plot_figure_6():
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         # File Name
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-        var_string = "%.2e" % m_imp
+        var_string = f"{m_imp:.2e}"
         var_string = var_string.replace('.', '_')
         var_string = var_string.replace('+', '')
 
@@ -342,5 +338,5 @@ def plot_figure_6():
     ax3.set_ylim([6e20, 1.5e23])
     ax3.set_yscale('log')
 
-    plt.savefig(dir_path + '/figures/figure_6.pdf', dpi=200)
+    plt.savefig(f"{dir_path}/figures/figure_6.pdf", dpi=200)
     # plt.show()
