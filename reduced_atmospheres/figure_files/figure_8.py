@@ -1,4 +1,5 @@
 import h5py
+import matplotli.axes as plt_axes
 import matplotlib.lines as lines
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -28,25 +29,26 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def flatten(LIST):
-    """
-    Flattens list of lists into single list.
+def flatten(a_list: list) -> list:
+    """Flattens list of lists into single list.
 
-    Parameters
-    ----------
-    LIST : list
-        List of lists to be flattened.
+    Args: 
+        a_list (list): List of lists to be flattened.
 
-    Returns
-    -------
+    Returns:
+        long_list : Flattened list.
 
     """
-    return [item for sublist in LIST for item in sublist]
+    return [item for sublist in a_list for item in sublist]
 
 
-def move_axes_across(ax0, ax1):
-    """
-    ax0 should be to the left of ax1.
+def move_axes_across(ax0 : plt_axes, ax1: plt_axes) -> None:
+    """Adjust horizontal axis pair so that they touch each other.
+    
+    Args: 
+        ax0 (plt_axes): Left axis in horizontal pair.
+        ax1 (plt_axes): Right axis in horizontal pair.
+        
     """
     # location of lower left and upper right corners of ax0
     ax0_pos = ax0.get_position()
@@ -69,9 +71,13 @@ def move_axes_across(ax0, ax1):
     ax1.set_position(ax1_pos)
 
 
-def move_axes_up(ax0, ax1):
-    """
-    ax0 should be above ax1.
+def move_axes_up(ax0 : plt_axes, ax1: plt_axes) -> None:
+    """Adjust vertical axis pair so that they touch each other.
+    
+    Args: 
+        ax0 (plt_axes): Upper axis in horizontal pair.
+        ax1 (plt_axes): Lower axis in horizontal pair.
+        
     """
     # location of lower left and upper right corners of ax0
     ax0_pos = ax0.get_position()
@@ -95,9 +101,7 @@ def move_axes_up(ax0, ax1):
 
 
 def plot_figure_8():
-    """Plot Figure 8 from Itcovitz et al. (2022).
-
-    Hydrogen abundances and oxygen fugacities under the different model scenarios before and after melt-atmosphere equilibration.
+    """Plot hydrogen abundances and oxygen fugacities under the different model scenarios before and after melt-atmosphere equilibration.
     
     """
     masses = np.logspace(np.log10(2.00e21), np.log10(2.44e22), 30, base=10.,

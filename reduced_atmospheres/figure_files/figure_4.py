@@ -27,10 +27,8 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def plot_figure_4():
-    """Plot Figure 4 from Itcovitz et al. (2022).
-
-    Impact-generated melt mass or vapor mass as a function of impactor mass or energy of impact.
+def plot_figure_4() -> None:
+    """Plot impact-generated melt mass and vapor mass as a function of impactor mass or energy of impact.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

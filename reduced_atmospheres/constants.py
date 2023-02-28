@@ -1,6 +1,7 @@
 import numpy as np
 import re
 import sys
+from typing import Tuple
 
 
 class Constants:
@@ -150,22 +151,15 @@ class Constants:
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     # METHODS
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def mol_phys_props(self, mol):
-        """
-        Calculates physical properties of the given molecule, namely the mass
-        and the diameter.
+    def mol_phys_props(self, mol: str) -> Tuple[float, float]:
+        """Calculate physical properties of the given molecule, namely the mass and the diameter.
 
-        Parameters
-        ----------
-        mol : str
-            Molecule for which calculations will be performed.
+        Args:
+            mol (str): Molecule for which calculations will be performed.
 
-        Returns
-        -------
-        mass : float
-            Mass of the molecule [kg]
-        diam : float
-            Diameter of the molecule [m]
+        Returns:
+            mass (float): Mass of the molecule, in units of 'kg'.
+            diam (float): Diameter of the molecule, in units of 'm'.
 
         """
         # remove ion markers from molecules' string labels

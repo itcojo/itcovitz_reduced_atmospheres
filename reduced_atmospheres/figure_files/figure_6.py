@@ -31,10 +31,10 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def plot_figure_6():
-    """Plot Figure 6 from Itcovitz et al. (2022).
+def plot_figure_6() -> None:
+    """Plot the post-impact state of the system.
 
-    The state of the system at the post-impact stage as a function of impactor mass in Model 3A.
+    Show the composition of the atmosphere, the oxygen fugacity of the impact-generated melt phase, and the quantity of metallic iron left.
 
     """
     # range of impact masses [kg]

@@ -5,6 +5,7 @@ from matplotlib.patches import ConnectionPatch
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from typing import Optional, Tuple
 
 import reduced_atmospheres
 import reduced_atmospheres.equilibrate_melt as eq_melt
@@ -39,8 +40,7 @@ def atmos_init_adap(
     display: Optional[bool] = False,
 ) -> Tuple[dict, dict, list, list]:
     """
-    Adapted version of 'atmos_init' from 'equilibrate_melt', specifically made
-    for plotting the figure.
+    Adapted version of 'atmos_init' from 'equilibrate_melt', specifically made for plotting the figure.
 
     Args:
         mass_imp (float): Mass of the impactor, in units of 'kg'.
@@ -208,16 +208,15 @@ def atmos_init_adap(
            [n_init, n_erosion, n_degas, n_ocean, n_iron, n_chem]
 
 
-def zero_to_nan(array_1d):
+def zero_to_nan(array_1d: list) -> list:
     """
-    Change all zeroes in input array to numpy nans.
+    Change all zeroes in input array to numpy NaNs.
 
-    Parameters
-    ----------
-    array_1d : list
-
-    Returns
-    -------
+    Args:
+        array_1d (list): Input array with zeroes.
+    
+    Returns:
+        output_array (list): Output array with NaNs.
 
     """
     for idx in range(len(array_1d)):
@@ -227,10 +226,8 @@ def zero_to_nan(array_1d):
     return array_1d
 
 
-def plot_figure_7():
-    """Plot Figure 7 from Itcovitz et al. (2022).
-
-    Partial pressures of atmospheric species at each stage of calculations.
+def plot_figure_7() -> None:
+    """Plot partial pressures of atmospheric species at each stage of calculations.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

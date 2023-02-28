@@ -11,8 +11,8 @@ def get_dpi() -> int:
         dpi (int): Appropriate dpi for the detected screen.
 
     """
-
-    return 175
+    # have face issues with detection, so just return constant until fix
+    return 200
 
     # # get screen size in units of [mm]
     # screens = [l.split()[-3:] for l in subprocess.check_output(

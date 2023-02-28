@@ -24,6 +24,11 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 # [model outputs are saved automatically as h5py files]
 model_run = False
 
+# are we using the pre_erratum version of the code?
+pre_erratum = ''
+if 'erratum' in Repository('.').head.shorthand:
+    pre_erratum = 'pre_erratum_'
+
 # which model version is running?
 # model_version = '1A'
 # model_version = '1B'
@@ -45,8 +50,13 @@ figure_4 = False
 figure_5 = False
 figure_6 = False
 figure_7 = False
-figure_8 = True
+figure_8 = False
 figure_9 = False
+
+# figure bolleans for figures in erratum, showing updates from original publication
+figure_6_comparison = False
+figure_8_comparison = True
+figure_9_comparison = True
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
@@ -121,10 +131,10 @@ if model_run:
         # where to save output
         folder = 'm_imps'
         if basalt:
-            save_file = dir_path + '/output/' + folder + '/basalt_' + \
+            save_file = dir_path + '/output/' + pre_erratum + folder + '/basalt_' + \
                         model_version + '_' + var_string
         if peridotite:
-            save_file = dir_path + '/output/' + folder + '/peridotite_' + \
+            save_file = dir_path + '/output/' + pre_erratum + folder + '/peridotite_' + \
                         model_version + '_' + var_string
 
         # FastChem system ID
@@ -267,3 +277,24 @@ if figure_9:
     # melt-bulk mantle redox comparison plot
     reduced_atmospheres.figure_files.figure_9.plot_figure_9()
     print(">>> Figure 9 generated.")
+
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# COMPARATIVE FIGURES
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+if figure_6_comparison:
+    # post-impact system plot
+    reduced_atmospheres.figure_files.figure_6_comparison.plot_figure_6()
+    # reduced_atmospheres.figure_files.figure_6_B.plot_figure_6B()
+    print(">>> Figure 6 comparison generated.")
+
+if figure_8_comparison:
+    # five models comparison plot
+    reduced_atmospheres.figure_files.figure_8_comparison.plot_figure_8()
+    print(">>> Figure 8 comparison generated.")
+
+if figure_9_comparison:
+    # melt-bulk mantle redox comparison plot
+    reduced_atmospheres.figure_files.figure_9_comparison.plot_figure_9()
+    print(">>> Figure 9 comparison generated.")

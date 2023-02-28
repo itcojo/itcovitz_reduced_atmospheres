@@ -27,10 +27,8 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def plot_figure_5():
-    """Plot Figure 7 from Itcovitz et al. (2022).
-
-    Distribution of impactor iron between the target interior, atmosphere, and escaping the system, as a function of impactor mass.
+def plot_figure_5() -> None:
+    """Plot distribution of impactor iron between the target interior, atmosphere, and escaping the system, as a function of impactor mass.
 
     """
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

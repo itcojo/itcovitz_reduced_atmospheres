@@ -27,10 +27,8 @@ cols = {'H2O': wong[2], 'H2': wong[-2], 'CO2': wong[0], 'N2': wong[3],
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-def plot_figure_9():
-    """Plot Figure 9 from Itcovitz et al. (2022).
-
-    Oxygen fugacity of the mantle before and after remixing with the impacted-effected melt phase.
+def plot_figure_9() -> None:
+    """Plot oxygen fugacity of the mantle before and after remixing with the impact-generated melt phase.
     
     """
     # impactor masses`

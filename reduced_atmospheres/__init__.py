@@ -14,6 +14,10 @@ import reduced_atmospheres.figure_files.figure_4
 import reduced_atmospheres.figure_files.figure_5
 import reduced_atmospheres.figure_files.figure_6
 import reduced_atmospheres.figure_files.figure_6_B
+import reduced_atmospheres.figure_files.figure_6_comparison
 import reduced_atmospheres.figure_files.figure_7
+import reduced_atmospheres.figure_files.figure_7_comparison
 import reduced_atmospheres.figure_files.figure_8
+import reduced_atmospheres.figure_files.figure_8_comparison
 import reduced_atmospheres.figure_files.figure_9
+import reduced_atmospheres.figure_files.figure_9_comparison
